@@ -1,0 +1,24 @@
+name: Pacman Deployment - Team1
+
+on:
+  push:
+    branches:
+      - team1
+    paths:
+      - 'pacman/**' # Only trigger if files in pacman directory change
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    labels: pacman-dev-gcp-team1
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: team1 # ensure we are on the correct branch
+
+      - name: Navigate to pacman directory and pull changes
+        run: |
+          cd pacman
+          git pull origin team1
