@@ -243,6 +243,7 @@ AFRAME.registerComponent('player', {
     forward.y = 0;
     if (forward.lengthSq() === 0) return null;
     forward.normalize();
+    forward.multiplyScalar(-1);
 
     // Restrict to dominant axis for deterministic tile movement.
     if (Math.abs(forward.x) > Math.abs(forward.z)) {
