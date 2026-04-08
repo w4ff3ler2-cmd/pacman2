@@ -237,12 +237,18 @@ AFRAME.registerComponent('player', {
   },
   updatePlayerDest: function (x, y, z) {
     let camera = document.querySelector("a-camera");
-    let angle = camera.getAttribute("rotation");
+    let forward = new THREE.Vector3();
+    camera.object3D.getWorldDirection(forward);
 
-    let _z = step * Math.cos(angle.y * Math.PI / 180);
-    let _x = step * Math.sin(angle.y * Math.PI / 180);
-    let z_ = Math.round((z - _z - startZ)/step);
-    let x_ = Math.round((x - _x - startX)/step);
+    // Move on maze plane only, in the camera facing direction.
+    forward.y = 0;
+    if (forward.lengthSq() === 0) return;
+    forward.normalize();
+
+    let targetX = x + forward.x * step;
+    let targetZ = z + forward.z * step;
+    let z_ = Math.round((targetZ - startZ)/step);
+    let x_ = Math.round((targetX - startX)/step);
     let i = z_ > row - 1 ? row - 1: z_ < 0 ? 0 : z_;
     let j = x_ > col - 1 ? col - 1 : x_ < 0 ? 0 : x_;
 
