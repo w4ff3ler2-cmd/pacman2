@@ -222,8 +222,6 @@ AFRAME.registerComponent('player', {
       let z = position.z;
 
       this.updatePlayerDest(x, y, z);
-      // Keep player rig aligned with camera controls.
-      this.player.object3D.rotation.set(0, 0, 0);
       this.onCollideWithPellets(x, z);
       this.updateGhosts(x, z);
       this.updateMode(position);
