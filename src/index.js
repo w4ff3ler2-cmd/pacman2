@@ -235,6 +235,7 @@ AFRAME.registerComponent('player', {
     this.updateMode(position);
 
     document.querySelector('#score').setAttribute('text', { value: score });
+    updateHighScoreLive();
 
     if (this.nextBg && this.currentBg !== this.nextBg) {
       this.currentBg.stop();
@@ -509,13 +510,7 @@ AFRAME.registerComponent('player', {
     this.clearPowerEffect();
 
     // Update score
-    if (score > highScore) {
-      highScore = score;
-      document.querySelector('#highscore').setAttribute('text', {
-        'value': highScore
-      });
-      localStorage.setItem('highscore', highScore);
-    }
+    updateHighScoreLive();
 
     // Stop ghosts
     this.ghosts.forEach(ghost => {
@@ -587,6 +582,17 @@ function updateGhostColor(ghost, color) {
   ghost.traverse(child => {
     if (child instanceof THREE.Mesh && child.material.name === 'ghostmat')
       child.material.color.setHex(color);
+  });
+}
+
+function updateHighScoreLive() {
+  if (score < highScore) return;
+  if (score !== highScore) {
+    highScore = score;
+    localStorage.setItem('highscore', highScore);
+  }
+  document.querySelector('#highscore').setAttribute('text', {
+    value: highScore
   });
 }
 
