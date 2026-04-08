@@ -6,7 +6,7 @@ require('aframe-particle-system-component');
 import {intersections, maze} from './config.js';
 import {Howl} from 'howler';
 
-const pillDuration = 70;
+const pillDuration = 32;
 const chaseDuration = 80;
 const scatterDuration = 90;
 const flashDuration = 20;
