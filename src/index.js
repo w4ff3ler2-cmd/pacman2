@@ -384,6 +384,7 @@ AFRAME.registerComponent('player', {
     die.play();
 
     this.stop();
+    updateLife();
 
     // Rotate replayer
     let player = this.player;
@@ -541,7 +542,6 @@ function restart(timeout) {
     document.querySelectorAll('[ghost]')
       .forEach(ghost => updateAgentDest(ghost, ghost.defaultPos));
     dead = false;
-    updateLife();
     enableCamera();
   }, timeout);    
 }
