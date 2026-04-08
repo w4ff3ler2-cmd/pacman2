@@ -206,7 +206,7 @@ AFRAME.registerComponent('maze', {
 
 AFRAME.registerComponent('player', {
   init: function () {
-    this.tick = AFRAME.utils.throttleTick(this.tick, 320, this);
+    this.tick = AFRAME.utils.throttleTick(this.tick, 380, this);
     this.waveCnt = 0;
     this.hitGhosts = [];
     this.ghosts = document.querySelectorAll('[ghost]');
