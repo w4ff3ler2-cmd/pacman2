@@ -206,67 +206,66 @@ AFRAME.registerComponent('player', {
     this.hitGhosts = [];
     this.ghosts = document.querySelectorAll('[ghost]');
     this.player = document.querySelector('[player]');
+    this.camera = document.querySelector('a-camera');
     // Keep player orientation independent from pathfinding turning.
-    this.player.setAttribute('nav-agent', {
-      active: false
-    });
+    this.player.setAttribute('nav-agent', { active: false });
     this.lastNearestGhostDist = null;
     this.lastNearbyGhostCnt = -1;
     this.currentBg = siren;
     this.nextBg = siren;
   },
   tick: function () {
-    if (!dead && path.length >= row){
-      this.nextBg = siren;
+    if (dead || path.length < row) return;
 
-      let position = this.el.getAttribute('position');
-      let x = position.x;
-      let y = position.y;
-      let z = position.z;
+    this.nextBg = siren;
+    const position = this.el.getAttribute('position');
+    const x = position.x;
+    const yPos = position.y;
+    const z = position.z;
 
-      this.updatePlayerDest(x, y, z);
-      this.updateCloseProximity(x, z);
-      this.onCollideWithPellets(x, z);
-      this.updateGhosts(x, z);
-      this.updateMode(position);
-      
-      // Update score
-      document.querySelector('#score').setAttribute('text', {
-        value: score
-      });
+    this.updatePlayerDest(x, yPos, z);
+    this.updateCloseProximity(x, z);
+    this.onCollideWithPellets(x, z);
+    this.updateGhosts(x, z);
+    this.updateMode(position);
 
-      // Update background sound
-      if (this.nextBg && this.currentBg != this.nextBg) {
-        this.currentBg.stop();
-        this.nextBg.play();
-        this.currentBg = this.nextBg;
-      } 
+    document.querySelector('#score').setAttribute('text', { value: score });
+
+    if (this.nextBg && this.currentBg !== this.nextBg) {
+      this.currentBg.stop();
+      this.nextBg.play();
+      this.currentBg = this.nextBg;
     }
   },
-  updatePlayerDest: function (x, y, z) {
-    let camera = document.querySelector("a-camera");
-    let forward = new THREE.Vector3();
-    camera.object3D.getWorldDirection(forward);
+  getForwardStep: function () {
+    const forward = new THREE.Vector3();
+    this.camera.object3D.getWorldDirection(forward);
     forward.y = 0;
-
-    if (forward.lengthSq() === 0) return;
+    if (forward.lengthSq() === 0) return null;
     forward.normalize();
 
-    // Snap to the dominant axis so movement stays tile-stable.
+    // Restrict to dominant axis for deterministic tile movement.
     if (Math.abs(forward.x) > Math.abs(forward.z)) {
-      forward.x = Math.sign(forward.x);
-      forward.z = 0;
-    } else {
-      forward.z = Math.sign(forward.z);
-      forward.x = 0;
+      return {x: Math.sign(forward.x), z: 0};
     }
-
-    let targetX = x + forward.x * step;
-    let targetZ = z + forward.z * step;
-    let z_ = Math.round((targetZ - startZ)/step);
-    let x_ = Math.round((targetX - startX)/step);
-    let i = z_ > row - 1 ? row - 1: z_ < 0 ? 0 : z_;
-    let j = x_ > col - 1 ? col - 1 : x_ < 0 ? 0 : x_;
+    return {x: 0, z: Math.sign(forward.z)};
+  },
+  clampGrid: function (i, j) {
+    return {
+      i: i > row - 1 ? row - 1 : i < 0 ? 0 : i,
+      j: j > col - 1 ? col - 1 : j < 0 ? 0 : j
+    };
+  },
+  updatePlayerDest: function (x, y, z) {
+    const forwardStep = this.getForwardStep();
+    if (!forwardStep) return;
+    const targetX = x + forwardStep.x * step;
+    const targetZ = z + forwardStep.z * step;
+    const z_ = Math.round((targetZ - startZ) / step);
+    const x_ = Math.round((targetX - startX) / step);
+    const clamped = this.clampGrid(z_, x_);
+    const i = clamped.i;
+    const j = clamped.j;
 
     if (i === 13 && j === 0) // Tunnel
       this.el.object3D.position.set(path[13][24][0], y, path[13][24][2]);
@@ -282,15 +281,15 @@ AFRAME.registerComponent('player', {
     let nearest = Infinity;
     let nearbyCnt = 0;
     this.ghosts.forEach(ghost => {
-      let ghostPos = ghost.getAttribute('position');
-      let dx = ghostPos.x - x;
-      let dz = ghostPos.z - z;
-      let dist = Math.sqrt(dx * dx + dz * dz);
+      const ghostPos = ghost.getAttribute('position');
+      const dx = ghostPos.x - x;
+      const dz = ghostPos.z - z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
       if (dist < nearest) nearest = dist;
       if (dist <= closeProximityDist) nearbyCnt++;
     });
 
-    let nearestRounded = Number.isFinite(nearest) ? Number(nearest.toFixed(3)) : -1;
+    const nearestRounded = Number.isFinite(nearest) ? Number(nearest.toFixed(3)) : -1;
     if (nearestRounded !== this.lastNearestGhostDist || nearbyCnt !== this.lastNearbyGhostCnt) {
       this.lastNearestGhostDist = nearestRounded;
       this.lastNearbyGhostCnt = nearbyCnt;
@@ -303,7 +302,7 @@ AFRAME.registerComponent('player', {
     }
   },
   updateGhosts: function (x, z) {
-    let ghosts = this.ghosts;
+    const ghosts = this.ghosts;
     for (var i = 0; i < ghosts.length; i++) {
       if (ghosts[i].dead) this.nextBg = ghostEaten;
 
@@ -333,7 +332,7 @@ AFRAME.registerComponent('player', {
       if (this.nextBg != ghostEaten) this.nextBg = waza;
     } else {
       // Scatter and chase
-      this.waveCnt = this.waveCnt > (chaseDuration + scatterDuration) ? 0: this.waveCnt + 1;
+      this.waveCnt = this.waveCnt > (chaseDuration + scatterDuration) ? 0 : this.waveCnt + 1;
       if (this.waveCnt > scatterDuration) 
         targetPos = position;
     }
@@ -359,8 +358,8 @@ AFRAME.registerComponent('player', {
     startEl.style.display = 'block';
   },
   onCollideWithGhost: function (ghost, x, z, i) {
-    let ghostX = ghost.getAttribute('position').x;
-    let ghostZ = ghost.getAttribute('position').z;
+    const ghostX = ghost.getAttribute('position').x;
+    const ghostZ = ghost.getAttribute('position').z;
 
     if (Math.abs(ghostX - x) < gCollideDist && Math.abs(ghostZ - z) < gCollideDist) {
       if (!ghost.dead){
@@ -388,9 +387,10 @@ AFRAME.registerComponent('player', {
     }
   },
   onCollideWithPellets: function (x, z) {
-    let i = Math.round((z - startZ)/step);
-    let j = Math.round((x - startX)/step);
-    let currentP = path[i > row - 1 ? row - 1 : i < 0 ? 0 : i][j > col - 1 ? col - 1 : j < 0 ? 0 : j];
+    const i = Math.round((z - startZ)/step);
+    const j = Math.round((x - startX)/step);
+    const clamped = this.clampGrid(i, j);
+    const currentP = path[clamped.i][clamped.j];
 
     if (currentP && currentP[4] >= P.PELLET) {
       let pellet = document.querySelector(`#p${currentP[3]}`);
