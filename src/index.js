@@ -22,7 +22,10 @@ const P = {
   WALL: -1,
   ROAD: 0,
   PELLET: 1,
-  POWERPILL: 2 
+  POWERPILL: 2,
+  POWER_KILL: 2,
+  POWER_SPEED: 3,
+  POWER_FREEZE: 4
 };
 const pColor = '#FFB897';
 const gColor = 0x2121DE;
@@ -44,6 +47,7 @@ let lifeCnt = 3;
 let highScore;
 let score = 0;
 let pillCnt = 0;
+let activePowerType = null;
 let soundCtrl = true;
 
 const siren = new Howl({
@@ -136,20 +140,21 @@ AFRAME.registerComponent('maze', {
     for (let i = 0; i < maze.length; i++) {
       let x = startX + i %  col * step; 
       let z = startZ + Math.floor(i / col) * step;
+      const cellType = maze[i] >= P.POWERPILL ? getPowerPillType(i) : maze[i];
       if (maze[i] >= P.PELLET) {
         pCnt++;
 
         let sphere = document.createElement('a-sphere');
-        sphere.setAttribute('color', pColor);
-        sphere.setAttribute('radius', radius * maze[i]);
+        sphere.setAttribute('color', cellType >= P.POWERPILL ? getPowerPillColor(cellType) : pColor);
+        sphere.setAttribute('radius', cellType >= P.POWERPILL ? radius * 2 : radius);
         sphere.setAttribute('position', `${x} ${y} ${z}`);
         sphere.setAttribute('id', `p${i}`);
         sphere.setAttribute('pellet', '');
         
-        if (maze[i] >= P.POWERPILL) {
+        if (cellType >= P.POWERPILL) {
           let animation = document.createElement('a-animation');
           animation.setAttribute("attribute", "material.color");
-          animation.setAttribute("from", pColor);
+          animation.setAttribute("from", getPowerPillColor(cellType));
           animation.setAttribute("to", "white");
           animation.setAttribute("dur","500");
           animation.setAttribute("repeat","indefinite");
@@ -159,7 +164,7 @@ AFRAME.registerComponent('maze', {
       }
       
       // Store positions in path
-      line.push(maze[i] >= 0 ? [x, y, z, maze[i] > 0 ? i : P.WALL, maze[i]] : []); 
+      line.push(maze[i] >= 0 ? [x, y, z, cellType > 0 ? i : P.WALL, cellType] : []); 
       cnt++;    
       if (cnt > (col - 1)) {
         path.push(line);
@@ -244,12 +249,13 @@ AFRAME.registerComponent('player', {
     if (forward.lengthSq() === 0) return null;
     forward.normalize();
     forward.multiplyScalar(-1);
+    const speedMul = activePowerType === P.POWER_SPEED ? 2 : 1;
 
     // Restrict to dominant axis for deterministic tile movement.
     if (Math.abs(forward.x) > Math.abs(forward.z)) {
-      return {x: Math.sign(forward.x), z: 0};
+      return {x: Math.sign(forward.x) * speedMul, z: 0};
     }
-    return {x: 0, z: Math.sign(forward.z)};
+    return {x: 0, z: Math.sign(forward.z) * speedMul};
   },
   clampGrid: function (i, j) {
     return {
@@ -309,7 +315,7 @@ AFRAME.registerComponent('player', {
 
       this.onCollideWithGhost(ghosts[i], x, z, i);
 
-      if (ghosts[i].slow) {
+      if (activePowerType === P.POWER_KILL && ghosts[i].slow) {
         if (pillCnt === 1) { // Leave pill mode
           updateGhostColor(ghosts[i].object3D, ghosts[i].defaultColor);
 
@@ -330,7 +336,8 @@ AFRAME.registerComponent('player', {
     targetPos = null;
     if (pillCnt > 0) {
       pillCnt--;
-      if (this.nextBg != ghostEaten) this.nextBg = waza;
+      if (activePowerType === P.POWER_KILL && this.nextBg != ghostEaten) this.nextBg = waza;
+      if (pillCnt === 0) this.clearPowerEffect();
     } else {
       // Scatter and chase
       this.waveCnt = this.waveCnt > (chaseDuration + scatterDuration) ? 0 : this.waveCnt + 1;
@@ -403,7 +410,7 @@ AFRAME.registerComponent('player', {
         if (currentP[4] >= P.POWERPILL) {
           eatPill.play();
           score += pillScore;
-          this.onEatPill();
+          this.onEatPill(currentP[4]);
         } else {
           eating.play();
           score += pelletScore;
@@ -412,16 +419,55 @@ AFRAME.registerComponent('player', {
       if (pCnt < 1) this.onWin();
     }
   },
-  onEatPill: function () {
+  onEatPill: function (powerType) {
     pillCnt = pillDuration;
-    this.hitGhosts = [];
-    this.ghosts.forEach(ghost => {
-      updateGhostColor(ghost.object3D, gColor);
-      ghost.slow = true;
-      ghost.setAttribute('nav-agent', {
-        speed: gSlowSpeed
+    this.clearPowerEffect();
+    activePowerType = powerType;
+
+    if (powerType === P.POWER_KILL) {
+      this.hitGhosts = [];
+      this.ghosts.forEach(ghost => {
+        updateGhostColor(ghost.object3D, gColor);
+        ghost.slow = true;
+        ghost.setAttribute('nav-agent', {
+          active: true,
+          speed: gSlowSpeed
+        });
       });
+      return;
+    }
+
+    if (powerType === P.POWER_FREEZE) {
+      this.ghosts.forEach(ghost => {
+        ghost.slow = false;
+        updateGhostColor(ghost.object3D, 0x7DE7FF);
+        ghost.setAttribute('nav-agent', {
+          active: false
+        });
+      });
+      return;
+    }
+
+    if (powerType === P.POWER_SPEED) {
+      this.player.setAttribute('data-speed-boost', 'true');
+    }
+  },
+  clearPowerEffect: function () {
+    if (activePowerType === P.POWER_SPEED) {
+      this.player.setAttribute('data-speed-boost', 'false');
+    }
+
+    this.ghosts.forEach(ghost => {
+      ghost.slow = false;
+      if (!ghost.dead) {
+        updateGhostColor(ghost.object3D, ghost.defaultColor);
+        ghost.setAttribute('nav-agent', {
+          active: true,
+          speed: gNormSpeed
+        });
+      }
     });
+    activePowerType = null;
   },
   onWin: function () {
     this.stop();
@@ -460,6 +506,7 @@ AFRAME.registerComponent('player', {
     dead = true;
     pillCnt = 0;
     this.waveCnt = 0;
+    this.clearPowerEffect();
 
     // Update score
     if (score > highScore) {
@@ -541,6 +588,17 @@ function updateGhostColor(ghost, color) {
     if (child instanceof THREE.Mesh && child.material.name === 'ghostmat')
       child.material.color.setHex(color);
   });
+}
+
+function getPowerPillType(cellIndex) {
+  const types = [P.POWER_SPEED, P.POWER_KILL, P.POWER_FREEZE];
+  return types[cellIndex % types.length];
+}
+
+function getPowerPillColor(powerType) {
+  if (powerType === P.POWER_SPEED) return '#FFD54A';
+  if (powerType === P.POWER_FREEZE) return '#6EE7FF';
+  return '#5B7BFF';
 }
 
 function movePlayerToDefaultPosition() {
