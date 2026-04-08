@@ -205,9 +205,9 @@ AFRAME.registerComponent('player', {
     this.hitGhosts = [];
     this.ghosts = document.querySelectorAll('[ghost]');
     this.player = document.querySelector('[player]');
-    this.player.object3D.rotation.set(0, 0, 0);
+    // Keep player orientation independent from pathfinding turning.
     this.player.setAttribute('nav-agent', {
-      lookAtTarget: false
+      active: false
     });
     this.currentBg = siren;
     this.nextBg = siren;
@@ -271,7 +271,7 @@ AFRAME.registerComponent('player', {
     else {
       let newPos = path[i][j];
       if (newPos && newPos.length > 0)
-        updateAgentDest(this.player, new THREE.Vector3(newPos[0], 0, newPos[2]));
+        this.player.object3D.position.set(newPos[0], y, newPos[2]);
     }
   },
   updateGhosts: function (x, z) {
