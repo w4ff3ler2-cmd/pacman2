@@ -30,6 +30,7 @@ const gNormSpeed = 0.65;
 const gSlowSpeed = 0.2;
 const gFastSpeed = 1.5;
 const gCollideDist = 0.6;
+const closeProximityDist = 1.2;
 const pelletScore = 10;
 const pillScore = 50;
 const ghostScore = 200;
@@ -209,6 +210,8 @@ AFRAME.registerComponent('player', {
     this.player.setAttribute('nav-agent', {
       active: false
     });
+    this.lastNearestGhostDist = null;
+    this.lastNearbyGhostCnt = -1;
     this.currentBg = siren;
     this.nextBg = siren;
   },
@@ -222,6 +225,7 @@ AFRAME.registerComponent('player', {
       let z = position.z;
 
       this.updatePlayerDest(x, y, z);
+      this.updateCloseProximity(x, z);
       this.onCollideWithPellets(x, z);
       this.updateGhosts(x, z);
       this.updateMode(position);
@@ -272,6 +276,30 @@ AFRAME.registerComponent('player', {
       let newPos = path[i][j];
       if (newPos && newPos.length > 0)
         this.player.object3D.position.set(newPos[0], y, newPos[2]);
+    }
+  },
+  updateCloseProximity: function (x, z) {
+    let nearest = Infinity;
+    let nearbyCnt = 0;
+    this.ghosts.forEach(ghost => {
+      let ghostPos = ghost.getAttribute('position');
+      let dx = ghostPos.x - x;
+      let dz = ghostPos.z - z;
+      let dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < nearest) nearest = dist;
+      if (dist <= closeProximityDist) nearbyCnt++;
+    });
+
+    let nearestRounded = Number.isFinite(nearest) ? Number(nearest.toFixed(3)) : -1;
+    if (nearestRounded !== this.lastNearestGhostDist || nearbyCnt !== this.lastNearbyGhostCnt) {
+      this.lastNearestGhostDist = nearestRounded;
+      this.lastNearbyGhostCnt = nearbyCnt;
+      this.player.setAttribute('data-nearest-ghost-distance', nearestRounded);
+      this.player.setAttribute('data-nearby-ghost-count', nearbyCnt);
+      this.player.emit('proximity-update', {
+        nearestGhostDistance: nearestRounded,
+        nearbyGhostCount: nearbyCnt
+      });
     }
   },
   updateGhosts: function (x, z) {
