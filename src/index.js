@@ -7,13 +7,13 @@ import {intersections, maze} from './config.js';
 import {Howl} from 'howler';
 
 const powerDuration = {
-  speed: 24,
-  kill: 32,
-  freeze: 20
+  speed: 5000,
+  kill: 5000,
+  freeze: 5000
 };
 const chaseDuration = 80;
 const scatterDuration = 90;
-const flashDuration = 20;
+const flashDurationMs = 1500;
 
 const startX = -6.4;
 const startZ = -7.3;
@@ -242,7 +242,7 @@ AFRAME.registerComponent('player', {
     this.updateCloseProximity(x, z);
     this.onCollideWithPellets(x, z);
     this.updateGhosts(x, z);
-    this.updateMode(position);
+    this.updateMode(position, timeDelta);
 
     document.querySelector('#score').setAttribute('text', { value: score });
     updateHighScoreLive();
@@ -363,15 +363,8 @@ AFRAME.registerComponent('player', {
       this.onCollideWithGhost(ghosts[i], x, z, i);
 
       if (activePowerType === P.POWER_KILL && ghosts[i].slow) {
-        if (pillCnt === 1) { // Leave pill mode
-          updateGhostColor(ghosts[i].object3D, ghosts[i].defaultColor);
-
-          ghosts[i].slow = false;
-          ghosts[i].setAttribute('nav-agent', {
-            speed: gNormSpeed
-          });
-        } else if (pillCnt > 1) {
-          if (pillCnt < flashDuration && pillCnt % 2 === 0) // Flash
+        if (pillCnt > 0) {
+          if (pillCnt < flashDurationMs && Math.floor(pillCnt / 150) % 2 === 0) // Flash
             updateGhostColor(ghosts[i].object3D, 0xFFFFFF);
           else
             updateGhostColor(ghosts[i].object3D, gColor);
@@ -379,10 +372,10 @@ AFRAME.registerComponent('player', {
       }
     }
   },
-  updateMode: function (position) {
+  updateMode: function (position, timeDelta) {
     targetPos = null;
     if (pillCnt > 0) {
-      pillCnt--;
+      pillCnt = Math.max(0, pillCnt - timeDelta);
       if (activePowerType === P.POWER_KILL && this.nextBg != ghostEaten) this.nextBg = waza;
       if (pillCnt === 0) this.clearPowerEffect();
     } else {
