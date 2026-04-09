@@ -480,7 +480,7 @@ AFRAME.registerComponent('player', {
         score += ghostScore;
       });
     }
-    if (pCnt < 1) this.onWin();
+    if (pCnt < 1 && !stageTransitioning) this.advanceStage();
   },
   updateGhosts: function (x, z) {
     const ghosts = this.ghosts;
@@ -530,7 +530,7 @@ AFRAME.registerComponent('player', {
   },
   checkStageAdvance: function () {
     if (stageTransitioning || dead) return;
-    if (score >= nextLevelScore) {
+    if (score >= nextLevelScore || pCnt < 1) {
       this.advanceStage();
     }
   },
@@ -636,7 +636,7 @@ AFRAME.registerComponent('player', {
           score += pelletScore;
         }
       }
-      if (pCnt < 1) this.onWin();
+      if (pCnt < 1 && !stageTransitioning) this.advanceStage();
     }
   },
   onEatPill: function (powerType) {
