@@ -69,6 +69,17 @@ let minimapCanvas;
 let minimapCtx;
 let dynamicWallEls = [];
 let dynamicObstacleIndices = new Set();
+const ghostColorCycle = ['0x00A6FF', '0xFF1744', '0x39FF14', '0xFF4FD8', '0xFF8C00', '0xA78BFA', '0x00E5FF', '0xFFD166'];
+const ghostSpawnTiles = [
+  {x: 13, z: 13},
+  {x: 11, z: 13},
+  {x: 12, z: 12},
+  {x: 14, z: 12},
+  {x: 10, z: 13},
+  {x: 15, z: 13},
+  {x: 12, z: 14},
+  {x: 14, z: 14}
+];
 
 const siren = new Howl({
   src: ['assets/sounds/siren.mp3'],
@@ -116,6 +127,7 @@ AFRAME.registerComponent('maze', {
         'value': highScore
       });
       updatePowerupHud();
+      updatePowerTimerHud();
     });
   },
   initLife: function () {
@@ -255,6 +267,7 @@ AFRAME.registerComponent('maze', {
 
     score = 0;
     stageLevel = startLevel;
+    ensureGhostCountForStage(stageLevel);
     ghostDefeatedCnt = 0;
     nextLevelScore = stageLevel * levelScoreStep;
     stageTransitioning = false;
@@ -265,6 +278,7 @@ AFRAME.registerComponent('maze', {
     updateGhostDefeatedHud();
     updateStageHud();
     updatePowerupHud();
+    updatePowerTimerHud();
 
     ready.play();
     restart(3000);
@@ -512,6 +526,7 @@ AFRAME.registerComponent('player', {
       if (this.waveCnt > scatterDuration) 
         targetPos = position;
     }
+    updatePowerTimerHud();
   },
   checkStageAdvance: function () {
     if (stageTransitioning || dead) return;
@@ -522,6 +537,7 @@ AFRAME.registerComponent('player', {
   advanceStage: function () {
     stageTransitioning = true;
     stageLevel++;
+    ensureGhostCountForStage(stageLevel);
     ghostDefeatedCnt = 0;
     nextLevelScore += levelScoreStep;
 
@@ -531,6 +547,7 @@ AFRAME.registerComponent('player', {
     pCnt = totalP;
     updateGhostDefeatedHud();
     updateStageHud();
+    updatePowerTimerHud();
 
     document.getElementById("gameover").style.display = 'none';
     const readyEl = document.getElementById("ready");
@@ -627,6 +644,7 @@ AFRAME.registerComponent('player', {
     this.clearPowerEffect();
     activePowerType = powerType;
     updatePowerupHud();
+    updatePowerTimerHud();
 
     if (powerType === P.POWER_KILL) {
       this.hitGhosts = [];
@@ -689,6 +707,7 @@ AFRAME.registerComponent('player', {
     });
     activePowerType = null;
     updatePowerupHud();
+    updatePowerTimerHud();
   },
   onWin: function () {
     this.stop();
@@ -847,11 +866,27 @@ function updatePowerupHud() {
   });
 }
 
+function updatePowerTimerHud() {
+  const timerEl = document.querySelector('#powertimer');
+  if (!timerEl) return;
+  if (!activePowerType || pillCnt <= 0) {
+    timerEl.setAttribute('text', {
+      value: 'PWR TIME: 0s',
+      color: '#A8A8A8'
+    });
+    return;
+  }
+  timerEl.setAttribute('text', {
+    value: `PWR TIME: ${Math.ceil(pillCnt / 1000)}s`,
+    color: getPowerPillColor(activePowerType)
+  });
+}
+
 function updateGhostDefeatedHud() {
   const ghostCntEl = document.querySelector('#ghostcount');
   if (!ghostCntEl) return;
   ghostCntEl.setAttribute('text', {
-    value: `GHOSTS: ${ghostDefeatedCnt}/4`
+    value: `GHOSTS: ${ghostDefeatedCnt}/${getStageGhostCount(stageLevel)}`
   });
 }
 
@@ -1110,6 +1145,33 @@ function getSelectedStartLevel() {
   const parsed = parseInt(selectEl.value, 10);
   if (Number.isNaN(parsed) || parsed < 1) return 1;
   return parsed;
+}
+
+function getStageGhostCount(level) {
+  return Math.min(ghostSpawnTiles.length, 4 + Math.floor(Math.max(level - 1, 0) / 3));
+}
+
+function ensureGhostCountForStage(level) {
+  const sceneEl = document.querySelector('a-scene');
+  if (!sceneEl) return;
+  const targetCount = getStageGhostCount(level);
+  let ghosts = document.querySelectorAll('[ghost]');
+  for (let i = ghosts.length; i < targetCount; i++) {
+    const spawn = ghostSpawnTiles[i] || ghostSpawnTiles[ghostSpawnTiles.length - 1];
+    const gx = startX + spawn.x * step;
+    const gz = startZ + spawn.z * step;
+    const ghost = document.createElement('a-gltf-model');
+    ghost.setAttribute('gltf-model', '#ghost');
+    ghost.setAttribute('position', `${gx} 0 ${gz}`);
+    ghost.setAttribute('nav-agent', `speed: ${gNormSpeed}`);
+    ghost.setAttribute('ghost', ghostColorCycle[i % ghostColorCycle.length]);
+    sceneEl.appendChild(ghost);
+  }
+  ghosts = document.querySelectorAll('[ghost]');
+  const playerEl = document.querySelector('[player]');
+  const playerComp = playerEl && playerEl.components ? playerEl.components.player : null;
+  if (playerComp) playerComp.ghosts = ghosts;
+  updateGhostDefeatedHud();
 }
 
 function getPowerPillColor(powerType) {
