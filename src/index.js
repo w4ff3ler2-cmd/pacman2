@@ -8,7 +8,7 @@ import {Howl} from 'howler';
 
 const powerDuration = {
   speed: 5000,
-  kill: 5000,
+  kill: 10000,
   freeze: 5000
 };
 const chaseDuration = 80;
@@ -152,6 +152,7 @@ AFRAME.registerComponent('maze', {
 
     this.setStageLayout(1);
     this.buildStageBoard();
+    applyStageTheme(1);
     initMinimap();
   },
   setStageLayout: function (level) {
@@ -166,15 +167,20 @@ AFRAME.registerComponent('maze', {
     document.querySelectorAll('[pellet]').forEach(p => p.parentNode.removeChild(p));
     dynamicWallEls.forEach(w => w.parentNode && w.parentNode.removeChild(w));
     dynamicWallEls = [];
+    const obstacleIndices = spawnDynamicObstacles(sceneEl, stageLevel);
+    obstacleIndices.forEach(idx => {
+      currentMaze[idx] = P.WALL;
+    });
 
     let cnt = 0;
     let line = [];
     for (let i = 0; i < currentMaze.length; i++) {
+      const cellValue = obstacleIndices.has(i) ? P.WALL : currentMaze[i];
       let x = startX + i % col * step;
       let z = startZ + Math.floor(i / col) * step;
-      const cellType = getCellTypeAtIndex(currentMaze, i);
+      const cellType = getCellTypeAtIndex(currentMaze, i, cellValue);
 
-      if (currentMaze[i] >= P.PELLET) {
+      if (cellValue >= P.PELLET) {
         pCnt++;
         let sphere = document.createElement('a-sphere');
         sphere.setAttribute('color', cellType >= P.POWERPILL ? getPowerPillColor(cellType) : pColor);
@@ -195,7 +201,7 @@ AFRAME.registerComponent('maze', {
         sceneEl.appendChild(sphere);
       }
 
-      line.push(currentMaze[i] >= 0 ? [x, y, z, cellType > 0 ? i : P.WALL, cellType] : []);
+      line.push(cellValue >= 0 ? [x, y, z, cellType > 0 ? i : P.WALL, cellType] : []);
       cnt++;
       if (cnt > (col - 1)) {
         path.push(line);
@@ -204,7 +210,6 @@ AFRAME.registerComponent('maze', {
       }
     }
     totalP = pCnt;
-    spawnDynamicObstacles(sceneEl, stageLevel);
   },
   rebuildStageLayout: function (level) {
     this.setStageLayout(level);
@@ -828,8 +833,8 @@ function getPowerPillType(cellIndex) {
   return types[cellIndex % types.length];
 }
 
-function getCellTypeAtIndex(stageMaze, cellIndex) {
-  const cell = stageMaze[cellIndex];
+function getCellTypeAtIndex(stageMaze, cellIndex, overrideCell) {
+  const cell = typeof overrideCell === 'number' ? overrideCell : stageMaze[cellIndex];
   if (cell === P.POWERPILL) return getPowerPillType(cellIndex);
   return cell;
 }
@@ -927,23 +932,27 @@ function spawnDynamicObstacles(sceneEl, level) {
   };
 
   const maxObs = Math.min(6, candidates.length);
+  const chosen = new Set();
   for (let i = 0; i < maxObs; i++) {
     const pick = Math.floor(seeded(i + 1) * candidates.length);
     const coord = candidates.splice(pick, 1)[0];
     if (!coord) continue;
+    const idx = coord[1] * col + coord[0];
+    chosen.add(idx);
     const x = startX + coord[0] * step;
     const z = startZ + coord[1] * step;
     const wall = document.createElement('a-box');
     wall.setAttribute('position', `${x} 0.5 ${z}`);
-    wall.setAttribute('depth', `${step * 1.25}`);
-    wall.setAttribute('width', `${step * 1.25}`);
-    wall.setAttribute('height', '1.0');
+    wall.setAttribute('depth', `${step * 1.7}`);
+    wall.setAttribute('width', `${step * 1.7}`);
+    wall.setAttribute('height', '1.25');
     wall.setAttribute('color', getStageWallColor(level));
     wall.setAttribute('opacity', '0.98');
     wall.setAttribute('class', 'dynamic-wall');
     sceneEl.appendChild(wall);
     dynamicWallEls.push(wall);
   }
+  return chosen;
 }
 
 function applyStageTheme(level) {
