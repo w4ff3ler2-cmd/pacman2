@@ -207,6 +207,7 @@ AFRAME.registerComponent('maze', {
     this.setStageLayout(level);
     this.buildStageBoard();
     stageTargetScore = getHalfPelletScoreTarget();
+    applyStageTheme(level);
   },
   initStartButton: function () {
     let button = document.getElementById("start");
@@ -830,24 +831,33 @@ function getCellTypeAtIndex(stageMaze, cellIndex) {
 function getStageMaze(level) {
   if (level <= 1) return maze.slice();
 
-  // Stage 2+: mirrored maze with remapped pellets for a distinct layout.
-  const nextMaze = [];
+  // Stage 2+: keep walls/navmesh compatibility, but use a different
+  // pellet-road layout pattern and power pill placement.
+  const nextMaze = maze.slice();
   for (let r = 0; r < row; r++) {
-    const rowStart = r * col;
-    const original = maze.slice(rowStart, rowStart + col);
-    const mirrored = original.slice().reverse();
     for (let c = 0; c < col; c++) {
-      const v = mirrored[c];
-      if (v >= P.POWERPILL) {
-        // Rotate power pill type by stage for visible variation.
-        const stageShift = (level - 1) % 3;
-        const variants = [P.POWER_KILL, P.POWER_SPEED, P.POWER_FREEZE];
-        nextMaze.push(variants[(c + r + stageShift) % variants.length]);
-      } else {
-        nextMaze.push(v);
+      const idx = r * col + c;
+      if (maze[idx] < 0) continue; // Keep wall layout unchanged.
+      if (maze[idx] === 0) {
+        nextMaze[idx] = 0;
+        continue;
       }
+
+      // New stage pattern: diagonal lanes and pockets.
+      nextMaze[idx] = ((r + c) % 4 === 0 || (r % 5 === 0 && c % 2 === 0)) ? 0 : 1;
     }
   }
+
+  // Stage-specific power pellets in fixed, visible positions.
+  const powerCoords = [
+    [1, 3], [24, 3], [3, 8], [22, 8],
+    [3, 20], [22, 20], [1, 26], [24, 26]
+  ];
+  powerCoords.forEach(([x, z]) => {
+    const idx = z * col + x;
+    if (idx >= 0 && idx < nextMaze.length && nextMaze[idx] >= 0) nextMaze[idx] = 2;
+  });
+
   return nextMaze;
 }
 
@@ -869,6 +879,22 @@ function getIntersectionsForMaze(stageMaze) {
 
   // Fallback to known-good intersections if computed set is too sparse.
   return pts.length > 10 ? pts : intersections.slice();
+}
+
+function applyStageTheme(level) {
+  const sky = document.querySelector('a-sky');
+  const floor = document.querySelector('a-plane');
+  if (!sky || !floor) return;
+
+  if (level <= 1) {
+    sky.setAttribute('color', 'blue');
+    floor.setAttribute('color', 'black');
+    return;
+  }
+
+  // Distinct Stage 2+ palette.
+  sky.setAttribute('color', '#1E0B3B');
+  floor.setAttribute('color', '#0F1C2E');
 }
 
 function getPowerPillColor(powerType) {
