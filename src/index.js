@@ -54,6 +54,11 @@ let score = 0;
 let pillCnt = 0;
 let activePowerType = null;
 let soundCtrl = true;
+let stageLevel = 1;
+let ghostDefeatedCnt = 0;
+let stageScoreStart = 0;
+let stageTargetScore = 0;
+let stageTransitioning = false;
 let minimapCanvas;
 let minimapCtx;
 
@@ -181,6 +186,7 @@ AFRAME.registerComponent('maze', {
       }
     }
     totalP = pCnt;
+    stageTargetScore = getHalfPelletScoreTarget();
     initMinimap();
   },
   initStartButton: function () {
@@ -204,10 +210,15 @@ AFRAME.registerComponent('maze', {
     document.getElementById("ready").style.display = 'block';
 
     score = 0;
+    stageLevel = 1;
+    ghostDefeatedCnt = 0;
+    stageScoreStart = 0;
+    stageTransitioning = false;
     activePowerType = null;
     document.querySelector('#score').setAttribute('text', {
       'value': score
     });
+    updateGhostDefeatedHud();
     updatePowerupHud();
 
     ready.play();
@@ -246,6 +257,7 @@ AFRAME.registerComponent('player', {
     this.onCollideWithPellets(x, z);
     this.updateGhosts(x, z);
     this.updateMode(position, timeDelta);
+    this.checkStageAdvance();
     renderMinimap(position, this.ghosts);
 
     document.querySelector('#score').setAttribute('text', { value: score });
@@ -389,6 +401,35 @@ AFRAME.registerComponent('player', {
         targetPos = position;
     }
   },
+  checkStageAdvance: function () {
+    if (stageTransitioning || dead) return;
+    const stageScoreDelta = score - stageScoreStart;
+    if (ghostDefeatedCnt >= 4 || stageScoreDelta >= stageTargetScore) {
+      this.advanceStage();
+    }
+  },
+  advanceStage: function () {
+    stageTransitioning = true;
+    stageLevel++;
+    ghostDefeatedCnt = 0;
+    stageScoreStart = score;
+
+    this.stop();
+    pCnt = totalP;
+    document.querySelectorAll('[pellet]').forEach(p => p.setAttribute('visible', true));
+    updateGhostDefeatedHud();
+
+    document.getElementById("gameover").style.display = 'none';
+    const readyEl = document.getElementById("ready");
+    readyEl.innerHTML = `STAGE ${stageLevel}`;
+    readyEl.style.display = 'block';
+
+    setTimeout(() => {
+      readyEl.innerHTML = 'READY!';
+      stageTransitioning = false;
+      restart(1600);
+    }, 1000);
+  },
   onGameOver: function (win) {
     this.nextBg = undefined;
     siren.stop();
@@ -419,6 +460,8 @@ AFRAME.registerComponent('player', {
           eatGhost.play();
 
           this.hitGhosts.push(i);
+          ghostDefeatedCnt++;
+          updateGhostDefeatedHud();
           ghost.dead = true;
           ghost.slow = false;
 
@@ -669,6 +712,14 @@ function updatePowerupHud() {
   });
 }
 
+function updateGhostDefeatedHud() {
+  const ghostCntEl = document.querySelector('#ghostcount');
+  if (!ghostCntEl) return;
+  ghostCntEl.setAttribute('text', {
+    value: `GHOSTS: ${ghostDefeatedCnt}/4`
+  });
+}
+
 function worldToTile(x, z) {
   const tileX = Math.round((x - startX) / step);
   const tileZ = Math.round((z - startZ) / step);
@@ -752,6 +803,15 @@ function getPowerPillDuration(powerType) {
   if (powerType === P.POWER_SPEED) return powerDuration.speed;
   if (powerType === P.POWER_FREEZE) return powerDuration.freeze;
   return powerDuration.kill;
+}
+
+function getHalfPelletScoreTarget() {
+  let totalScore = 0;
+  for (let i = 0; i < maze.length; i++) {
+    if (maze[i] < P.PELLET) continue;
+    totalScore += maze[i] >= P.POWERPILL ? pillScore : pelletScore;
+  }
+  return Math.floor(totalScore / 2);
 }
 
 function movePlayerToDefaultPosition() {
