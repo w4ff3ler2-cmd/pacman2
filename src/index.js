@@ -908,12 +908,12 @@ function getStageMaze(level) {
 
   // Procedural power pellet anchors per level.
   let placed = 0;
-  for (let i = 0; i < nextMaze.length && placed < 8; i++) {
+  for (let i = 0; i < nextMaze.length && placed < 16; i++) {
     if (nextMaze[i] <= 0) continue;
     const r = Math.floor(i / col);
     const c = i % col;
-    const n = seededNoise(r + level, c + level);
-    if (n > 0.86) {
+    const n = seededNoise(r + level * 2, c + level * 3);
+    if (n > 0.78) {
       nextMaze[i] = 2;
       placed++;
     }
@@ -943,6 +943,7 @@ function getIntersectionsForMaze(stageMaze) {
 }
 
 function spawnDynamicObstacles(sceneEl, level) {
+  if (level <= 1) return new Set();
   const candidates = [];
   for (let r = 0; r < row; r++) {
     for (let c = 0; c < col; c++) {
@@ -1040,8 +1041,10 @@ function getSelectedStartLevel() {
 function getPowerPillColor(powerType) {
   if (!powerType) return '#FFFFFF';
   if (powerType === P.POWER_SPEED) return '#FFD54A';
-  if (powerType === P.POWER_FREEZE) return '#6EE7FF';
-  return '#5B7BFF';
+  if (powerType === P.POWER_FREEZE) return '#8FEFFF';
+  if (powerType === P.POWER_FIRE) return '#FF2A2A';
+  if (powerType === P.POWER_KILL) return '#8B5A2B';
+  return '#FFFFFF';
 }
 
 function getPowerPillDuration(powerType) {
