@@ -31,7 +31,7 @@ const P = {
   POWER_SPEED: 3,
   POWER_FREEZE: 4
 };
-const pColor = '#FFB897';
+const pColor = '#FFFFFF';
 const gColor = 0x2121DE;
 const gNormSpeed = 0.65;
 const gSlowSpeed = 0.2;
@@ -174,19 +174,6 @@ AFRAME.registerComponent('maze', {
       let z = startZ + Math.floor(i / col) * step;
       const cellType = getCellTypeAtIndex(currentMaze, i);
 
-      if (currentMaze[i] < 0 && maze[i] >= 0) {
-        const wall = document.createElement('a-box');
-        wall.setAttribute('position', `${x} 0.32 ${z}`);
-        wall.setAttribute('depth', `${step * 0.95}`);
-        wall.setAttribute('width', `${step * 0.95}`);
-        wall.setAttribute('height', '0.65');
-        wall.setAttribute('color', getStageWallColor(stageLevel));
-        wall.setAttribute('opacity', '0.92');
-        wall.setAttribute('class', 'dynamic-wall');
-        sceneEl.appendChild(wall);
-        dynamicWallEls.push(wall);
-      }
-
       if (currentMaze[i] >= P.PELLET) {
         pCnt++;
         let sphere = document.createElement('a-sphere');
@@ -217,6 +204,7 @@ AFRAME.registerComponent('maze', {
       }
     }
     totalP = pCnt;
+    spawnDynamicObstacles(sceneEl, stageLevel);
   },
   rebuildStageLayout: function (level) {
     this.setStageLayout(level);
@@ -242,6 +230,8 @@ AFRAME.registerComponent('maze', {
 
     document.getElementById("logo").style.display = 'none';
     document.getElementById("start").style.display = 'none';
+    const levelWrap = document.getElementById('level-select-wrap');
+    if (levelWrap) levelWrap.style.display = 'none';
     document.getElementById("gameover").style.display = 'none';
     document.getElementById("ready").style.display = 'block';
 
@@ -493,6 +483,8 @@ AFRAME.registerComponent('player', {
     let startEl = document.getElementById("start");
     startEl.innerHTML = 'RESTART';
     startEl.style.display = 'block';
+    const levelWrap = document.getElementById('level-select-wrap');
+    if (levelWrap) levelWrap.style.display = 'flex';
   },
   onCollideWithGhost: function (ghost, x, z, i) {
     const ghostX = ghost.getAttribute('position').x;
@@ -878,8 +870,6 @@ function getStageMaze(level) {
         nextMaze[idx] = n > 0.38 ? 1 : 0;
       }
 
-      // Add procedural walls on some traversable cells.
-      if (n > 0.92) nextMaze[idx] = -1;
     }
   }
 
@@ -919,12 +909,58 @@ function getIntersectionsForMaze(stageMaze) {
   return pts.length > 10 ? pts : intersections.slice();
 }
 
+function spawnDynamicObstacles(sceneEl, level) {
+  const candidates = [];
+  for (let r = 0; r < row; r++) {
+    for (let c = 0; c < col; c++) {
+      const idx = r * col + c;
+      if (currentMaze[idx] < 0) continue;
+      const keepRoute = (r >= 12 && r <= 16 && c >= 8 && c <= 17) || (r === 13 && (c <= 2 || c >= 23));
+      if (keepRoute) continue;
+      candidates.push([c, r]);
+    }
+  }
+
+  const seeded = (n) => {
+    const x = Math.sin(n * 12.9898 + level * 78.233) * 43758.5453;
+    return x - Math.floor(x);
+  };
+
+  const maxObs = Math.min(6, candidates.length);
+  for (let i = 0; i < maxObs; i++) {
+    const pick = Math.floor(seeded(i + 1) * candidates.length);
+    const coord = candidates.splice(pick, 1)[0];
+    if (!coord) continue;
+    const x = startX + coord[0] * step;
+    const z = startZ + coord[1] * step;
+    const wall = document.createElement('a-box');
+    wall.setAttribute('position', `${x} 0.5 ${z}`);
+    wall.setAttribute('depth', `${step * 1.25}`);
+    wall.setAttribute('width', `${step * 1.25}`);
+    wall.setAttribute('height', '1.0');
+    wall.setAttribute('color', getStageWallColor(level));
+    wall.setAttribute('opacity', '0.98');
+    wall.setAttribute('class', 'dynamic-wall');
+    sceneEl.appendChild(wall);
+    dynamicWallEls.push(wall);
+  }
+}
+
 function applyStageTheme(level) {
   const sky = document.querySelector('a-sky');
   const floor = document.querySelector('a-plane');
   const minimap = document.querySelector('#minimap');
   const mazeEl = document.querySelector('[maze]');
   if (!sky || !floor) return;
+
+  if (level <= 1) {
+    sky.setAttribute('color', '#000000');
+    floor.setAttribute('color', '#000000');
+    if (minimap) minimap.style.borderColor = '#303234';
+    tintMazeWalls(mazeEl, '#303234');
+    dynamicWallEls.forEach(w => w.setAttribute('color', '#303234'));
+    return;
+  }
 
   const themes = [
     {sky: '#1E0B3B', floor: '#0F1C2E', border: '#7D63FF'},
@@ -952,7 +988,7 @@ function tintMazeWalls(mazeEntity, hexColor) {
 }
 
 function getStageWallColor(level) {
-  const colors = ['#2121DE', '#5D2EFF', '#1FA36D', '#C76A10', '#B03060'];
+  const colors = ['#303234', '#5D2EFF', '#1FA36D', '#C76A10', '#B03060'];
   return colors[(level - 1) % colors.length];
 }
 
