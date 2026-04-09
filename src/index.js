@@ -251,6 +251,10 @@ AFRAME.registerComponent('maze', {
   },
   start: function () {
     const startLevel = getSelectedStartLevel();
+    stageLevel = startLevel;
+    nextLevelScore = stageLevel * levelScoreStep;
+    stageTransitioning = false;
+
     this.rebuildStageLayout(startLevel);
     this.initLife();
 
@@ -266,11 +270,8 @@ AFRAME.registerComponent('maze', {
     document.getElementById("ready").style.display = 'block';
 
     score = 0;
-    stageLevel = startLevel;
     ensureGhostCountForStage(stageLevel);
     ghostDefeatedCnt = 0;
-    nextLevelScore = stageLevel * levelScoreStep;
-    stageTransitioning = false;
     activePowerType = null;
     document.querySelector('#score').setAttribute('text', {
       'value': score
