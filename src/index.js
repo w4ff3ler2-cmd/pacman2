@@ -10,7 +10,8 @@ const powerDuration = {
   speed: 5000,
   kill: 10000,
   freeze: 5000,
-  earth: 8000
+  earth: 8000,
+  fire: 6000
 };
 const chaseDuration = 80;
 const scatterDuration = 90;
@@ -31,7 +32,8 @@ const P = {
   POWER_KILL: 2,
   POWER_SPEED: 3,
   POWER_FREEZE: 4,
-  POWER_EARTH: 5
+  POWER_EARTH: 5,
+  POWER_FIRE: 6
 };
 const pColor = '#FFFFFF';
 const gColor = 0x2121DE;
@@ -285,6 +287,7 @@ AFRAME.registerComponent('player', {
     this.currentBg = siren;
     this.nextBg = siren;
     this.isTrackedByGhost = false;
+    this.lastFirePulseAt = 0;
   },
   tick: function (time, timeDelta) {
     if (dead || path.length < row) return;
@@ -298,6 +301,7 @@ AFRAME.registerComponent('player', {
     this.isTrackedByGhost = false;
 
     this.updatePlayerMovement(x, yPos, z, timeDelta);
+    if (activePowerType === P.POWER_FIRE) this.applyFireLane(x, z, time);
     this.updateCloseProximity(x, z);
     this.onCollideWithPellets(x, z);
     this.updateGhosts(x, z);
@@ -424,6 +428,46 @@ AFRAME.registerComponent('player', {
       });
     }
   },
+  applyFireLane: function (x, z, time) {
+    if (time - this.lastFirePulseAt < 180) return;
+    this.lastFirePulseAt = time;
+
+    const dir = this.getForwardStep();
+    if (!dir) return;
+    const tile = worldToTile(x, z);
+
+    for (let d = 1; d < Math.max(row, col); d++) {
+      const tx = tile.x + dir.x * d;
+      const tz = tile.z + dir.z * d;
+      if (tx < 0 || tx >= col || tz < 0 || tz >= row) break;
+      const idx = tz * col + tx;
+      if (currentMaze[idx] < 0) break;
+
+      const pellet = document.querySelector(`#p${idx}`);
+      if (pellet && pellet.getAttribute('visible')) {
+        pCnt--;
+        pellet.setAttribute('visible', false);
+        score += currentMaze[idx] >= P.POWERPILL ? pillScore : pelletScore;
+      }
+
+      this.ghosts.forEach(ghost => {
+        if (ghost.dead) return;
+        const gp = ghost.getAttribute('position');
+        const gt = worldToTile(gp.x, gp.z);
+        if (gt.x !== tx || gt.z !== tz) return;
+        ghost.dead = true;
+        ghost.slow = false;
+        ghost.setAttribute('nav-agent', {
+          active: false,
+          speed: gFastSpeed
+        });
+        updateAgentDest(ghost, ghost.defaultPos);
+        setOpacity(ghost, 0.3);
+        score += ghostScore;
+      });
+    }
+    if (pCnt < 1) this.onWin();
+  },
   updateGhosts: function (x, z) {
     const ghosts = this.ghosts;
     for (var i = 0; i < ghosts.length; i++) {
@@ -528,7 +572,7 @@ AFRAME.registerComponent('player', {
 
     if (Math.abs(ghostX - x) < gCollideDist && Math.abs(ghostZ - z) < gCollideDist) {
       if (!ghost.dead){
-        if (ghost.slow || activePowerType === P.POWER_EARTH) {
+        if (ghost.slow || activePowerType === P.POWER_EARTH || activePowerType === P.POWER_FIRE) {
           eatGhost.play();
 
           this.hitGhosts.push(i);
@@ -615,6 +659,11 @@ AFRAME.registerComponent('player', {
 
     if (powerType === P.POWER_EARTH) {
       this.player.setAttribute('data-earth-break', 'true');
+      return;
+    }
+
+    if (powerType === P.POWER_FIRE) {
+      this.player.setAttribute('data-fire-lane', 'true');
     }
   },
   clearPowerEffect: function () {
@@ -623,6 +672,9 @@ AFRAME.registerComponent('player', {
     }
     if (activePowerType === P.POWER_EARTH) {
       this.player.setAttribute('data-earth-break', 'false');
+    }
+    if (activePowerType === P.POWER_FIRE) {
+      this.player.setAttribute('data-fire-lane', 'false');
     }
 
     this.ghosts.forEach(ghost => {
@@ -782,6 +834,7 @@ function getPowerupName(powerType) {
   if (powerType === P.POWER_KILL) return 'KILL';
   if (powerType === P.POWER_FREEZE) return 'FREEZE';
   if (powerType === P.POWER_EARTH) return 'EARTH';
+  if (powerType === P.POWER_FIRE) return 'FIRE';
   return 'NONE';
 }
 
@@ -878,7 +931,7 @@ function renderMinimap(playerPos, ghosts) {
 }
 
 function getPowerPillType(cellIndex) {
-  const types = [P.POWER_SPEED, P.POWER_KILL, P.POWER_FREEZE, P.POWER_EARTH];
+  const types = [P.POWER_SPEED, P.POWER_KILL, P.POWER_FREEZE, P.POWER_EARTH, P.POWER_FIRE];
   return types[cellIndex % types.length];
 }
 
@@ -1065,6 +1118,7 @@ function getPowerPillColor(powerType) {
   if (powerType === P.POWER_FREEZE) return '#8FEFFF';
   if (powerType === P.POWER_KILL) return '#8B0000';
   if (powerType === P.POWER_EARTH) return '#8B5A2B';
+  if (powerType === P.POWER_FIRE) return '#FF8C00';
   return '#FFFFFF';
 }
 
@@ -1072,6 +1126,7 @@ function getPowerPillDuration(powerType) {
   if (powerType === P.POWER_SPEED) return powerDuration.speed;
   if (powerType === P.POWER_FREEZE) return powerDuration.freeze;
   if (powerType === P.POWER_EARTH) return powerDuration.earth;
+  if (powerType === P.POWER_FIRE) return powerDuration.fire;
   return powerDuration.kill;
 }
 
