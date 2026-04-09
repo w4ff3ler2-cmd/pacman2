@@ -69,6 +69,7 @@ let minimapCanvas;
 let minimapCtx;
 let dynamicWallEls = [];
 let dynamicObstacleIndices = new Set();
+let lastPlayerReachSet = null;
 const ghostColorCycle = ['0x00A6FF', '0xFF1744', '0x39FF14', '0xFF4FD8', '0xFF8C00', '0xA78BFA', '0x00E5FF', '0xFFD166'];
 const ghostSpawnTiles = [
   {x: 13, z: 13},
@@ -194,6 +195,7 @@ AFRAME.registerComponent('maze', {
     obstacleIndices.forEach(idx => {
       currentMaze[idx] = P.WALL;
     });
+    currentIntersections = getIntersectionsForMaze(currentMaze);
 
     let cnt = 0;
     let line = [];
@@ -485,13 +487,19 @@ AFRAME.registerComponent('player', {
   },
   updateGhosts: function (x, z) {
     const ghosts = this.ghosts;
+    const playerTile = worldToTile(x, z);
+    lastPlayerReachSet = getTilesReachableFromPlayer(playerTile.x, playerTile.z);
+
     for (var i = 0; i < ghosts.length; i++) {
       if (ghosts[i].dead) this.nextBg = ghostEaten;
+      resolveGhostAgainstObstacles(ghosts[i]);
       const ghostPos = ghosts[i].getAttribute('position');
       const dx = x - ghostPos.x;
       const dz = z - ghostPos.z;
       const inChaseRange = Math.sqrt(dx * dx + dz * dz) <= ghostChaseRadius;
-      if (inChaseRange && !dead && activePowerType !== P.POWER_FREEZE && !ghosts[i].dead) {
+      const ghostTile = worldToTile(ghostPos.x, ghostPos.z);
+      const pathToPlayer = lastPlayerReachSet.has(`${ghostTile.x},${ghostTile.z}`);
+      if (inChaseRange && pathToPlayer && !dead && activePowerType !== P.POWER_FREEZE && !ghosts[i].dead) {
         this.isTrackedByGhost = true;
         updateAgentDest(ghosts[i], new THREE.Vector3(x, 0, z));
       }
@@ -785,6 +793,11 @@ AFRAME.registerComponent('ghost', {
     el.addEventListener('model-loaded', () => updateGhostColor(el.object3D, el.defaultColor));
     el.addEventListener('navigation-end', this.onNavEnd.bind(this));
   },
+  tick: function () {
+    if (dead || this.el.dead) return;
+    if (dynamicWallEls.length === 0) return;
+    resolveGhostAgainstObstacles(this.el);
+  },
   onNavEnd: function () {
     let el = this.el;
     if (el.dead) {
@@ -802,14 +815,23 @@ AFRAME.registerComponent('ghost', {
     const dx = playerPos.x - ghostPos.x;
     const dz = playerPos.z - ghostPos.z;
     const playerInChaseRange = Math.sqrt(dx * dx + dz * dz) <= ghostChaseRadius;
-    if (playerInChaseRange && !dead && activePowerType !== P.POWER_FREEZE) {
+    const ghostTile = worldToTile(ghostPos.x, ghostPos.z);
+    const reach = lastPlayerReachSet || getTilesReachableFromPlayer(
+      worldToTile(playerPos.x, playerPos.z).x,
+      worldToTile(playerPos.x, playerPos.z).z
+    );
+    const pathToPlayer = reach.has(`${ghostTile.x},${ghostTile.z}`);
+    if (playerInChaseRange && pathToPlayer && !dead && activePowerType !== P.POWER_FREEZE) {
       updateAgentDest(el, new THREE.Vector3(playerPos.x, 0, playerPos.z));
       return;
     }
 
-    let p = Math.floor(Math.random() * currentIntersections.length);
-    let x = startX + currentIntersections[p][0] * step; 
-    let z = startZ + currentIntersections[p][1] * step; 
+    const safePts = getWalkableIntersections();
+    const pts = safePts.length ? safePts : currentIntersections;
+    if (!pts.length) return;
+    let p = Math.floor(Math.random() * pts.length);
+    let x = startX + pts[p][0] * step;
+    let z = startZ + pts[p][1] * step;
     updateAgentDest(el, targetPos ? targetPos : new THREE.Vector3(x, 0, z));
   }
 }); 
@@ -910,6 +932,140 @@ function worldToTile(x, z) {
   };
 }
 
+function getWalkableIntersections() {
+  if (!currentIntersections || !currentIntersections.length) return [];
+  return currentIntersections.filter(([cx, cr]) => {
+    const idx = cr * col + cx;
+    return idx >= 0 && idx < currentMaze.length && currentMaze[idx] >= 0;
+  });
+}
+
+const PLAYER_REACH_MAX_DEPTH = 64;
+
+function getTilesReachableFromPlayer(tx, tz) {
+  const set = new Set();
+  if (tx < 0 || tx >= col || tz < 0 || tz >= row) return set;
+  if (currentMaze[tz * col + tx] < 0) return set;
+  const queue = [[tx, tz, 0]];
+  set.add(`${tx},${tz}`);
+  let qi = 0;
+  while (qi < queue.length) {
+    const [cx, cz, d] = queue[qi++];
+    if (d >= PLAYER_REACH_MAX_DEPTH) continue;
+    const nextD = d + 1;
+    const neighbors = [[cx + 1, cz], [cx - 1, cz], [cx, cz + 1], [cx, cz - 1]];
+    for (let ni = 0; ni < neighbors.length; ni++) {
+      const nx = neighbors[ni][0];
+      const nz = neighbors[ni][1];
+      if (nx < 0 || nx >= col || nz < 0 || nz >= row) continue;
+      if (currentMaze[nz * col + nx] < 0) continue;
+      const key = `${nx},${nz}`;
+      if (set.has(key)) continue;
+      set.add(key);
+      queue.push([nx, nz, nextD]);
+    }
+  }
+  return set;
+}
+
+function isGridWalkable(tx, tz) {
+  if (tx < 0 || tx >= col || tz < 0 || tz >= row) return false;
+  return currentMaze[tz * col + tx] >= 0;
+}
+
+function pointInsideAnyDynamicObstacle(x, z) {
+  for (let wi = 0; wi < dynamicWallEls.length; wi++) {
+    const wall = dynamicWallEls[wi];
+    const wp = wall.object3D.position;
+    const halfW = parseFloat(wall.getAttribute('width')) / 2;
+    const halfD = parseFloat(wall.getAttribute('depth')) / 2;
+    if (Math.abs(x - wp.x) < halfW && Math.abs(z - wp.z) < halfD) return true;
+  }
+  return false;
+}
+
+function snapGhostToNearestFreeTile(ghost, gx, gz, gy) {
+  const o3d = ghost.object3D;
+  const t = worldToTile(gx, gz);
+  for (let r = 0; r < 24; r++) {
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (r > 0 && Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const tx = t.x + dx;
+        const tz = t.z + dz;
+        if (!isGridWalkable(tx, tz)) continue;
+        const wx = startX + tx * step;
+        const wz = startZ + tz * step;
+        if (pointInsideAnyDynamicObstacle(wx, wz)) continue;
+        o3d.position.set(wx, gy, wz);
+        ghost.setAttribute('position', {x: wx, y: gy, z: wz});
+        return {x: wx, z: wz};
+      }
+    }
+  }
+  return null;
+}
+
+function nudgeGhostOutOfObstacleBoxes(ghost, gx, gz, gy) {
+  const o3d = ghost.object3D;
+  let x = gx;
+  let z = gz;
+  for (let iter = 0; iter < 16; iter++) {
+    let moved = false;
+    for (let wi = 0; wi < dynamicWallEls.length; wi++) {
+      const wall = dynamicWallEls[wi];
+      const wp = wall.object3D.position;
+      const halfW = parseFloat(wall.getAttribute('width')) / 2;
+      const halfD = parseFloat(wall.getAttribute('depth')) / 2;
+      const dx = x - wp.x;
+      const dz = z - wp.z;
+      if (Math.abs(dx) >= halfW || Math.abs(dz) >= halfD) continue;
+      const penX = halfW - Math.abs(dx);
+      const penZ = halfD - Math.abs(dz);
+      const signX = dx === 0 ? 1 : Math.sign(dx);
+      const signZ = dz === 0 ? 1 : Math.sign(dz);
+      if (penX < penZ) {
+        x = wp.x + signX * (halfW + 0.1);
+      } else {
+        z = wp.z + signZ * (halfD + 0.1);
+      }
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  o3d.position.set(x, gy, z);
+  ghost.setAttribute('position', {x: x, y: gy, z: z});
+  return {x: x, z: z};
+}
+
+function resolveGhostAgainstObstacles(ghost) {
+  if (!ghost || ghost.dead || dynamicWallEls.length === 0) return;
+
+  const o3d = ghost.object3D;
+  const gx = o3d.position.x;
+  const gz = o3d.position.z;
+  const gy = o3d.position.y;
+  const tile = worldToTile(gx, gz);
+  const onWallTile = !isGridWalkable(tile.x, tile.z);
+  const insideBox = pointInsideAnyDynamicObstacle(gx, gz);
+
+  if (!onWallTile && !insideBox) return;
+
+  let dest = snapGhostToNearestFreeTile(ghost, gx, gz, gy);
+  if (!dest && insideBox) {
+    dest = nudgeGhostOutOfObstacleBoxes(ghost, gx, gz, gy);
+    if (pointInsideAnyDynamicObstacle(dest.x, dest.z)) {
+      dest = snapGhostToNearestFreeTile(ghost, dest.x, dest.z, gy);
+    }
+  }
+  if (dest) {
+    const wt = worldToTile(dest.x, dest.z);
+    if (isGridWalkable(wt.x, wt.z) && !pointInsideAnyDynamicObstacle(dest.x, dest.z)) {
+      updateAgentDest(ghost, new THREE.Vector3(dest.x, 0, dest.z));
+    }
+  }
+}
+
 function initMinimap() {
   minimapCanvas = document.getElementById('minimap');
   if (!minimapCanvas) return;
@@ -969,7 +1125,7 @@ function renderMinimap(playerPos, ghosts) {
 }
 
 function getPowerPillType(cellIndex) {
-  // Classic stage 1: all power pellets are ghost-eat (kill); mixed types from stage 2+.
+  // Stage 1: classic kill (ghost-eat) power pellets only; mixed types from stage 2+.
   if (stageLevel <= 1) return P.POWER_KILL;
   const types = [P.POWER_SPEED, P.POWER_KILL, P.POWER_FREEZE, P.POWER_EARTH, P.POWER_FIRE];
   return types[cellIndex % types.length];
