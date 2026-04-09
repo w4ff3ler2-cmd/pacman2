@@ -6,7 +6,11 @@ require('aframe-particle-system-component');
 import {intersections, maze} from './config.js';
 import {Howl} from 'howler';
 
-const pillDuration = 32;
+const powerDuration = {
+  speed: 24,
+  kill: 32,
+  freeze: 20
+};
 const chaseDuration = 80;
 const scatterDuration = 90;
 const flashDuration = 20;
@@ -463,7 +467,7 @@ AFRAME.registerComponent('player', {
     }
   },
   onEatPill: function (powerType) {
-    pillCnt = pillDuration;
+    pillCnt = getPowerPillDuration(powerType);
     this.clearPowerEffect();
     activePowerType = powerType;
     updatePowerupHud();
@@ -678,6 +682,12 @@ function getPowerPillColor(powerType) {
   if (powerType === P.POWER_SPEED) return '#FFD54A';
   if (powerType === P.POWER_FREEZE) return '#6EE7FF';
   return '#5B7BFF';
+}
+
+function getPowerPillDuration(powerType) {
+  if (powerType === P.POWER_SPEED) return powerDuration.speed;
+  if (powerType === P.POWER_FREEZE) return powerDuration.freeze;
+  return powerDuration.kill;
 }
 
 function movePlayerToDefaultPosition() {
