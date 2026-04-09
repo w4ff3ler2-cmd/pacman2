@@ -537,13 +537,13 @@ AFRAME.registerComponent('player', {
   advanceStage: function () {
     stageTransitioning = true;
     stageLevel++;
-    ensureGhostCountForStage(stageLevel);
     ghostDefeatedCnt = 0;
     nextLevelScore += levelScoreStep;
 
     this.stop();
     const mazeComp = document.querySelector('[maze]').components.maze;
     mazeComp.rebuildStageLayout(stageLevel);
+    ensureGhostCountForStage(stageLevel);
     pCnt = totalP;
     updateGhostDefeatedHud();
     updateStageHud();
@@ -767,7 +767,9 @@ AFRAME.registerComponent('player', {
       ghost.slow = false;
       updateGhostColor(ghost.object3D, ghost.defaultColor);
       setOpacity(ghost, 1);
-      ghost.object3D.position.set(ghost.defaultPos.x, ghost.defaultPos.y, ghost.defaultPos.z);
+      const fallbackPos = ghost.getAttribute('position');
+      const respawnPos = ghost.defaultPos || new THREE.Vector3(fallbackPos.x, fallbackPos.y, fallbackPos.z);
+      ghost.object3D.position.set(respawnPos.x, respawnPos.y, respawnPos.z);
     });
   }
 });
@@ -1245,7 +1247,13 @@ function restart(timeout) {
   setTimeout(() => {
     document.getElementById("ready").style.display = 'none';
     document.querySelectorAll('[ghost]')
-      .forEach(ghost => updateAgentDest(ghost, ghost.defaultPos));
+      .forEach(ghost => {
+        const pos = ghost.defaultPos || (() => {
+          const gp = ghost.getAttribute('position');
+          return new THREE.Vector3(gp.x, gp.y, gp.z);
+        })();
+        updateAgentDest(ghost, pos);
+      });
     dead = false;
     enableCamera();
   }, timeout);    
