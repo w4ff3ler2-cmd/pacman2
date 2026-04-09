@@ -90,8 +90,12 @@ const ready = new Howl({
 
 const eating = new Howl({src: 'assets/sounds/eating.mp3'});
 const eatPill = new Howl({src: 'assets/sounds/eat-pill.mp3'});
-const eatGhost = new Howl({src: 'assets/sounds/eat-ghost.mp3'});
-const die = new Howl({src: 'assets/sounds/die.mp3'});
+const eatGhost = new Howl({src: 'assets/sounds/fahhh_KcgAXfs.mp3'});
+const trackAlert = new Howl({
+  src: 'assets/sounds/dexter-meme.mp3',
+  loop: true
+});
+const die = new Howl({src: 'assets/sounds/pacman-nes-death-sound.mp3'});
 
 AFRAME.registerComponent('maze', {
   init: function () {
@@ -127,6 +131,7 @@ AFRAME.registerComponent('maze', {
       eating.mute(!soundCtrl);
       eatGhost.mute(!soundCtrl);
       eatPill.mute(!soundCtrl);
+      trackAlert.mute(!soundCtrl);
       die.mute(!soundCtrl);
     });
   },
@@ -273,6 +278,7 @@ AFRAME.registerComponent('player', {
     this.lastNearbyGhostCnt = -1;
     this.currentBg = siren;
     this.nextBg = siren;
+    this.isTrackedByGhost = false;
   },
   tick: function (time, timeDelta) {
     if (dead || path.length < row) return;
@@ -283,11 +289,13 @@ AFRAME.registerComponent('player', {
     const x = position.x;
     const yPos = position.y;
     const z = position.z;
+    this.isTrackedByGhost = false;
 
     this.updatePlayerMovement(x, yPos, z, timeDelta);
     this.updateCloseProximity(x, z);
     this.onCollideWithPellets(x, z);
     this.updateGhosts(x, z);
+    this.updateTrackAlertAudio();
     this.updateMode(position, timeDelta);
     this.checkStageAdvance();
     renderMinimap(position, this.ghosts);
@@ -413,6 +421,7 @@ AFRAME.registerComponent('player', {
       const dz = z - ghostPos.z;
       const inChaseRange = Math.sqrt(dx * dx + dz * dz) <= ghostChaseRadius;
       if (inChaseRange && !dead && activePowerType !== P.POWER_FREEZE && !ghosts[i].dead) {
+        this.isTrackedByGhost = true;
         updateAgentDest(ghosts[i], new THREE.Vector3(x, 0, z));
       }
 
@@ -427,6 +436,13 @@ AFRAME.registerComponent('player', {
         }
       }
     }
+  },
+  updateTrackAlertAudio: function () {
+    if (this.isTrackedByGhost && soundCtrl) {
+      if (!trackAlert.playing()) trackAlert.play();
+      return;
+    }
+    if (trackAlert.playing()) trackAlert.stop();
   },
   updateMode: function (position, timeDelta) {
     targetPos = null;
@@ -476,6 +492,7 @@ AFRAME.registerComponent('player', {
     siren.stop();
     waza.stop();
     ghostEaten.stop();
+    trackAlert.stop();
     
     this.el.sceneEl.exitVR();
 
@@ -606,7 +623,7 @@ AFRAME.registerComponent('player', {
     this.onGameOver(true);
   },
   onDie: function () {
-    die.play();
+    if (lifeCnt > 1) die.play();
 
     this.stop();
     updateLife();
@@ -636,6 +653,7 @@ AFRAME.registerComponent('player', {
   stop: function () {
     disableCamera();
     dead = true;
+    trackAlert.stop();
     pillCnt = 0;
     this.waveCnt = 0;
     this.moveTarget = null;
