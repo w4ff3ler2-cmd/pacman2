@@ -33,6 +33,7 @@ const gNormSpeed = 0.65;
 const gSlowSpeed = 0.2;
 const gFastSpeed = 1.5;
 const gCollideDist = 0.6;
+const ghostChaseRadius = step * 3;
 const closeProximityDist = 1.2;
 const pelletScore = 10;
 const pillScore = 50;
@@ -91,6 +92,7 @@ AFRAME.registerComponent('maze', {
       document.querySelector('#highscore').setAttribute('text', {
         'value': highScore
       });
+      updatePowerupHud();
     });
   },
   initLife: function () {
@@ -195,9 +197,11 @@ AFRAME.registerComponent('maze', {
     document.getElementById("ready").style.display = 'block';
 
     score = 0;
+    activePowerType = null;
     document.querySelector('#score').setAttribute('text', {
       'value': score
     });
+    updatePowerupHud();
 
     ready.play();
     restart(3000);
@@ -206,12 +210,14 @@ AFRAME.registerComponent('maze', {
 
 AFRAME.registerComponent('player', {
   init: function () {
-    this.tick = AFRAME.utils.throttleTick(this.tick, 380, this);
     this.waveCnt = 0;
     this.hitGhosts = [];
     this.ghosts = document.querySelectorAll('[ghost]');
     this.player = document.querySelector('[player]');
     this.camera = document.querySelector('a-camera');
+    this.normalMoveInterval = 380;
+    this.fastMoveInterval = 190;
+    this.lastMoveAt = 0;
     // Keep player orientation independent from pathfinding turning.
     this.player.setAttribute('nav-agent', { active: false });
     this.lastNearestGhostDist = null;
@@ -219,8 +225,11 @@ AFRAME.registerComponent('player', {
     this.currentBg = siren;
     this.nextBg = siren;
   },
-  tick: function () {
+  tick: function (time) {
     if (dead || path.length < row) return;
+    const moveInterval = activePowerType === P.POWER_SPEED ? this.fastMoveInterval : this.normalMoveInterval;
+    if (time - this.lastMoveAt < moveInterval) return;
+    this.lastMoveAt = time;
 
     this.nextBg = siren;
     const position = this.el.getAttribute('position');
@@ -236,6 +245,7 @@ AFRAME.registerComponent('player', {
 
     document.querySelector('#score').setAttribute('text', { value: score });
     updateHighScoreLive();
+    updatePowerupHud();
 
     if (this.nextBg && this.currentBg !== this.nextBg) {
       this.currentBg.stop();
@@ -250,13 +260,12 @@ AFRAME.registerComponent('player', {
     if (forward.lengthSq() === 0) return null;
     forward.normalize();
     forward.multiplyScalar(-1);
-    const speedMul = activePowerType === P.POWER_SPEED ? 2 : 1;
 
     // Restrict to dominant axis for deterministic tile movement.
     if (Math.abs(forward.x) > Math.abs(forward.z)) {
-      return {x: Math.sign(forward.x) * speedMul, z: 0};
+      return {x: Math.sign(forward.x), z: 0};
     }
-    return {x: 0, z: Math.sign(forward.z) * speedMul};
+    return {x: 0, z: Math.sign(forward.z)};
   },
   clampGrid: function (i, j) {
     return {
@@ -313,6 +322,13 @@ AFRAME.registerComponent('player', {
     const ghosts = this.ghosts;
     for (var i = 0; i < ghosts.length; i++) {
       if (ghosts[i].dead) this.nextBg = ghostEaten;
+      const ghostPos = ghosts[i].getAttribute('position');
+      const dx = x - ghostPos.x;
+      const dz = z - ghostPos.z;
+      const inChaseRange = Math.sqrt(dx * dx + dz * dz) <= ghostChaseRadius;
+      if (inChaseRange && !dead && activePowerType !== P.POWER_FREEZE && !ghosts[i].dead) {
+        updateAgentDest(ghosts[i], new THREE.Vector3(x, 0, z));
+      }
 
       this.onCollideWithGhost(ghosts[i], x, z, i);
 
@@ -424,6 +440,7 @@ AFRAME.registerComponent('player', {
     pillCnt = pillDuration;
     this.clearPowerEffect();
     activePowerType = powerType;
+    updatePowerupHud();
 
     if (powerType === P.POWER_KILL) {
       this.hitGhosts = [];
@@ -469,6 +486,7 @@ AFRAME.registerComponent('player', {
       }
     });
     activePowerType = null;
+    updatePowerupHud();
   },
   onWin: function () {
     this.stop();
@@ -552,10 +570,21 @@ AFRAME.registerComponent('ghost', {
         speed: gNormSpeed
       });
     }
+    const player = document.querySelector('[player]');
+    const playerPos = player.getAttribute('position');
+    const ghostPos = el.getAttribute('position');
+    const dx = playerPos.x - ghostPos.x;
+    const dz = playerPos.z - ghostPos.z;
+    const playerInChaseRange = Math.sqrt(dx * dx + dz * dz) <= ghostChaseRadius;
+    if (playerInChaseRange && !dead && activePowerType !== P.POWER_FREEZE) {
+      updateAgentDest(el, new THREE.Vector3(playerPos.x, 0, playerPos.z));
+      return;
+    }
+
     let p = Math.floor(Math.random() * intersections.length);
     let x = startX + intersections[p][0] * step; 
     let z = startZ + intersections[p][1] * step; 
-    updateAgentDest(el, targetPos? targetPos: new THREE.Vector3(x, 0, z));
+    updateAgentDest(el, targetPos ? targetPos : new THREE.Vector3(x, 0, z));
   }
 }); 
 
@@ -596,12 +625,29 @@ function updateHighScoreLive() {
   });
 }
 
+function getPowerupName(powerType) {
+  if (powerType === P.POWER_SPEED) return 'SPEED';
+  if (powerType === P.POWER_KILL) return 'KILL';
+  if (powerType === P.POWER_FREEZE) return 'FREEZE';
+  return 'NONE';
+}
+
+function updatePowerupHud() {
+  const powerupEl = document.querySelector('#powerup');
+  if (!powerupEl) return;
+  powerupEl.setAttribute('text', {
+    value: `POWER: ${getPowerupName(activePowerType)}`,
+    color: getPowerPillColor(activePowerType)
+  });
+}
+
 function getPowerPillType(cellIndex) {
   const types = [P.POWER_SPEED, P.POWER_KILL, P.POWER_FREEZE];
   return types[cellIndex % types.length];
 }
 
 function getPowerPillColor(powerType) {
+  if (!powerType) return '#FFFFFF';
   if (powerType === P.POWER_SPEED) return '#FFD54A';
   if (powerType === P.POWER_FREEZE) return '#6EE7FF';
   return '#5B7BFF';
