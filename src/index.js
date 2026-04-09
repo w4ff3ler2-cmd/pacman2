@@ -250,6 +250,7 @@ AFRAME.registerComponent('maze', {
       'value': score
     });
     updateGhostDefeatedHud();
+    updateStageHud();
     updatePowerupHud();
 
     ready.play();
@@ -457,6 +458,7 @@ AFRAME.registerComponent('player', {
     mazeComp.rebuildStageLayout(stageLevel);
     pCnt = totalP;
     updateGhostDefeatedHud();
+    updateStageHud();
 
     document.getElementById("gameover").style.display = 'none';
     const readyEl = document.getElementById("ready");
@@ -758,6 +760,14 @@ function updateGhostDefeatedHud() {
   if (!ghostCntEl) return;
   ghostCntEl.setAttribute('text', {
     value: `GHOSTS: ${ghostDefeatedCnt}/4`
+  });
+}
+
+function updateStageHud() {
+  const stageEl = document.querySelector('#stage');
+  if (!stageEl) return;
+  stageEl.setAttribute('text', {
+    value: `STAGE: ${stageLevel}`
   });
 }
 
