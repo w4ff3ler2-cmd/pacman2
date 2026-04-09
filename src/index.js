@@ -9,7 +9,8 @@ import {Howl} from 'howler';
 const powerDuration = {
   speed: 5000,
   kill: 10000,
-  freeze: 5000
+  freeze: 5000,
+  earth: 8000
 };
 const chaseDuration = 80;
 const scatterDuration = 90;
@@ -29,7 +30,8 @@ const P = {
   POWERPILL: 2,
   POWER_KILL: 2,
   POWER_SPEED: 3,
-  POWER_FREEZE: 4
+  POWER_FREEZE: 4,
+  POWER_EARTH: 5
 };
 const pColor = '#FFFFFF';
 const gColor = 0x2121DE;
@@ -64,6 +66,7 @@ let stageTransitioning = false;
 let minimapCanvas;
 let minimapCtx;
 let dynamicWallEls = [];
+let dynamicObstacleIndices = new Set();
 
 const siren = new Howl({
   src: ['assets/sounds/siren.mp3'],
@@ -173,6 +176,7 @@ AFRAME.registerComponent('maze', {
     dynamicWallEls.forEach(w => w.parentNode && w.parentNode.removeChild(w));
     dynamicWallEls = [];
     const obstacleIndices = spawnDynamicObstacles(sceneEl, stageLevel);
+    dynamicObstacleIndices = new Set(obstacleIndices);
     obstacleIndices.forEach(idx => {
       currentMaze[idx] = P.WALL;
     });
@@ -384,8 +388,14 @@ AFRAME.registerComponent('player', {
       return;
     } else {
       let newPos = path[i][j];
-      if (newPos && newPos.length > 0)
+      if (newPos && newPos.length > 0) {
         this.moveTarget = new THREE.Vector3(newPos[0], y, newPos[2]);
+      } else if (activePowerType === P.POWER_EARTH) {
+        const idx = i * col + j;
+        if (dynamicObstacleIndices.has(idx)) {
+          this.moveTarget = new THREE.Vector3(startX + j * step, y, startZ + i * step);
+        }
+      }
     }
   },
   updateCloseProximity: function (x, z) {
@@ -516,7 +526,7 @@ AFRAME.registerComponent('player', {
 
     if (Math.abs(ghostX - x) < gCollideDist && Math.abs(ghostZ - z) < gCollideDist) {
       if (!ghost.dead){
-        if (ghost.slow) {
+        if (ghost.slow || activePowerType === P.POWER_EARTH) {
           eatGhost.play();
 
           this.hitGhosts.push(i);
@@ -598,11 +608,19 @@ AFRAME.registerComponent('player', {
 
     if (powerType === P.POWER_SPEED) {
       this.player.setAttribute('data-speed-boost', 'true');
+      return;
+    }
+
+    if (powerType === P.POWER_EARTH) {
+      this.player.setAttribute('data-earth-break', 'true');
     }
   },
   clearPowerEffect: function () {
     if (activePowerType === P.POWER_SPEED) {
       this.player.setAttribute('data-speed-boost', 'false');
+    }
+    if (activePowerType === P.POWER_EARTH) {
+      this.player.setAttribute('data-earth-break', 'false');
     }
 
     this.ghosts.forEach(ghost => {
@@ -761,6 +779,7 @@ function getPowerupName(powerType) {
   if (powerType === P.POWER_SPEED) return 'SPEED';
   if (powerType === P.POWER_KILL) return 'KILL';
   if (powerType === P.POWER_FREEZE) return 'FREEZE';
+  if (powerType === P.POWER_EARTH) return 'EARTH';
   return 'NONE';
 }
 
@@ -857,7 +876,7 @@ function renderMinimap(playerPos, ghosts) {
 }
 
 function getPowerPillType(cellIndex) {
-  const types = [P.POWER_SPEED, P.POWER_KILL, P.POWER_FREEZE];
+  const types = [P.POWER_SPEED, P.POWER_KILL, P.POWER_FREEZE, P.POWER_EARTH];
   return types[cellIndex % types.length];
 }
 
@@ -1042,14 +1061,15 @@ function getPowerPillColor(powerType) {
   if (!powerType) return '#FFFFFF';
   if (powerType === P.POWER_SPEED) return '#FFD54A';
   if (powerType === P.POWER_FREEZE) return '#8FEFFF';
-  if (powerType === P.POWER_FIRE) return '#FF2A2A';
-  if (powerType === P.POWER_KILL) return '#8B5A2B';
+  if (powerType === P.POWER_KILL) return '#8B0000';
+  if (powerType === P.POWER_EARTH) return '#8B5A2B';
   return '#FFFFFF';
 }
 
 function getPowerPillDuration(powerType) {
   if (powerType === P.POWER_SPEED) return powerDuration.speed;
   if (powerType === P.POWER_FREEZE) return powerDuration.freeze;
+  if (powerType === P.POWER_EARTH) return powerDuration.earth;
   return powerDuration.kill;
 }
 
