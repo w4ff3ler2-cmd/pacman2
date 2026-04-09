@@ -228,7 +228,9 @@ AFRAME.registerComponent('maze', {
   initStartButton: function () {
     let button = document.getElementById("start");
     if (button) {
-      button.addEventListener('click', this.start.bind(this));
+      // Keep a global start hook because index.html clones the start button.
+      window.startGame = this.start.bind(this);
+      button.addEventListener('click', window.startGame);
       button.innerHTML = "START";
       button.disabled = false;
     }
