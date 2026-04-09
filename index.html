@@ -60,6 +60,7 @@
        set here as a sensible default (the JS may overwrite it at runtime). -->
   <div id="gameover" class="overlay">GAME OVER</div>
   <div id="ready" class="overlay">READY!</div>
+  <canvas id="minimap" class="overlay" width="182" height="203"></canvas>
 
   <a-scene>
     <a-entity position="0 2.25 -15"
@@ -119,8 +120,8 @@
                     text="color: white; align: center; width: 0.4">
           </a-entity>
           <a-entity id="powerup"
-                    position="0.165 0.245 -0.3"
-                    text="color: #FFD54A; align: right; value: POWER: NONE; width: 0.32">
+                    position="0.12 0.20 -0.3"
+                    text="color: #FFD54A; align: left; value: POWER: NONE; width: 0.28">
           </a-entity>
         </a-entity>
       </a-camera>

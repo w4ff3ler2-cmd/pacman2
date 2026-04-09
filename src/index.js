@@ -54,6 +54,8 @@ let score = 0;
 let pillCnt = 0;
 let activePowerType = null;
 let soundCtrl = true;
+let minimapCanvas;
+let minimapCtx;
 
 const siren = new Howl({
   src: ['assets/sounds/siren.mp3'],
@@ -179,6 +181,7 @@ AFRAME.registerComponent('maze', {
       }
     }
     totalP = pCnt;
+    initMinimap();
   },
   initStartButton: function () {
     let button = document.getElementById("start");
@@ -243,6 +246,7 @@ AFRAME.registerComponent('player', {
     this.onCollideWithPellets(x, z);
     this.updateGhosts(x, z);
     this.updateMode(position, timeDelta);
+    renderMinimap(position, this.ghosts);
 
     document.querySelector('#score').setAttribute('text', { value: score });
     updateHighScoreLive();
@@ -662,6 +666,73 @@ function updatePowerupHud() {
   powerupEl.setAttribute('text', {
     value: `POWER: ${getPowerupName(activePowerType)}`,
     color: getPowerPillColor(activePowerType)
+  });
+}
+
+function worldToTile(x, z) {
+  const tileX = Math.round((x - startX) / step);
+  const tileZ = Math.round((z - startZ) / step);
+  return {
+    x: tileX > col - 1 ? col - 1 : tileX < 0 ? 0 : tileX,
+    z: tileZ > row - 1 ? row - 1 : tileZ < 0 ? 0 : tileZ
+  };
+}
+
+function initMinimap() {
+  minimapCanvas = document.getElementById('minimap');
+  if (!minimapCanvas) return;
+  minimapCtx = minimapCanvas.getContext('2d');
+}
+
+function renderMinimap(playerPos, ghosts) {
+  if (!minimapCanvas || !minimapCtx) return;
+
+  const ctx = minimapCtx;
+  const w = minimapCanvas.width;
+  const h = minimapCanvas.height;
+  const tileW = w / col;
+  const tileH = h / row;
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+  ctx.fillRect(0, 0, w, h);
+
+  for (let i = 0; i < maze.length; i++) {
+    const tx = i % col;
+    const tz = Math.floor(i / col);
+    const px = tx * tileW;
+    const pz = tz * tileH;
+
+    if (maze[i] < 0) {
+      ctx.fillStyle = '#142A66';
+      ctx.fillRect(px, pz, tileW, tileH);
+      continue;
+    }
+
+    if (maze[i] >= P.PELLET) {
+      const pellet = document.querySelector(`#p${i}`);
+      if (pellet && pellet.getAttribute('visible')) {
+        const pelletType = getPowerPillType(i);
+        ctx.fillStyle = maze[i] >= P.POWERPILL ? getPowerPillColor(pelletType) : pColor;
+        const r = maze[i] >= P.POWERPILL ? Math.max(2, tileW * 0.28) : Math.max(1, tileW * 0.16);
+        ctx.beginPath();
+        ctx.arc(px + tileW / 2, pz + tileH / 2, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  const playerTile = worldToTile(playerPos.x, playerPos.z);
+  ctx.fillStyle = '#FFE600';
+  ctx.beginPath();
+  ctx.arc((playerTile.x + 0.5) * tileW, (playerTile.z + 0.5) * tileH, Math.max(2, tileW * 0.35), 0, Math.PI * 2);
+  ctx.fill();
+
+  ghosts.forEach(ghost => {
+    if (ghost.dead) return;
+    const ghostPos = ghost.getAttribute('position');
+    const ghostTile = worldToTile(ghostPos.x, ghostPos.z);
+    ctx.fillStyle = '#FF4D4D';
+    ctx.fillRect((ghostTile.x + 0.2) * tileW, (ghostTile.z + 0.2) * tileH, tileW * 0.6, tileH * 0.6);
   });
 }
 

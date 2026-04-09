@@ -28,6 +28,17 @@ body {
   bottom: 20px;
 }
 
+#minimap {
+  top: 20px;
+  right: 20px;
+  width: 182px;
+  height: 203px;
+  border: 2px solid #3f66ff;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
 #logo-container {
   margin: 0;
   height: 100vh;
