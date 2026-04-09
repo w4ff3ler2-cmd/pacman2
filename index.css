@@ -71,6 +71,30 @@ body {
   background-color: white;
 }
 
+#level-select-wrap {
+  position: fixed;
+  top: calc(50% + 10px);
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-family: 'PressStart2P';
+  font-size: 0.65em;
+  text-shadow: 2px 2px black;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#level-select {
+  border-radius: 4px;
+  border: 2px solid #1f1f1f;
+  background: #ffffff;
+  color: #000000;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  padding: 3px 6px;
+}
+
 #start:hover, #start:active {
   cursor: pointer;
   color: white;

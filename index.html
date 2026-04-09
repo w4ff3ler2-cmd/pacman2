@@ -29,6 +29,16 @@
        ID-based CSS selector a dead rule. -->
   <div id="logo-container" class="logo-container overlay">
     <img id="logo" src="assets/images/logo.png" alt="Pac-Man logo">
+    <div id="level-select-wrap">
+      <label for="level-select">Level</label>
+      <select id="level-select" aria-label="Select start level">
+        <option value="1" selected>1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+    </div>
     <button id="start" disabled>
       <i class="fa fa-spinner fa-spin"></i>
     </button>

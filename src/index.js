@@ -63,6 +63,7 @@ let nextLevelScore = levelScoreStep;
 let stageTransitioning = false;
 let minimapCanvas;
 let minimapCtx;
+let dynamicWallEls = [];
 
 const siren = new Howl({
   src: ['assets/sounds/siren.mp3'],
@@ -163,6 +164,8 @@ AFRAME.registerComponent('maze', {
     pCnt = 0;
 
     document.querySelectorAll('[pellet]').forEach(p => p.parentNode.removeChild(p));
+    dynamicWallEls.forEach(w => w.parentNode && w.parentNode.removeChild(w));
+    dynamicWallEls = [];
 
     let cnt = 0;
     let line = [];
@@ -170,6 +173,19 @@ AFRAME.registerComponent('maze', {
       let x = startX + i % col * step;
       let z = startZ + Math.floor(i / col) * step;
       const cellType = getCellTypeAtIndex(currentMaze, i);
+
+      if (currentMaze[i] < 0 && maze[i] >= 0) {
+        const wall = document.createElement('a-box');
+        wall.setAttribute('position', `${x} 0.32 ${z}`);
+        wall.setAttribute('depth', `${step * 0.95}`);
+        wall.setAttribute('width', `${step * 0.95}`);
+        wall.setAttribute('height', '0.65');
+        wall.setAttribute('color', getStageWallColor(stageLevel));
+        wall.setAttribute('opacity', '0.92');
+        wall.setAttribute('class', 'dynamic-wall');
+        sceneEl.appendChild(wall);
+        dynamicWallEls.push(wall);
+      }
 
       if (currentMaze[i] >= P.PELLET) {
         pCnt++;
@@ -216,7 +232,8 @@ AFRAME.registerComponent('maze', {
     }
   },
   start: function () {
-    this.rebuildStageLayout(1);
+    const startLevel = getSelectedStartLevel();
+    this.rebuildStageLayout(startLevel);
     this.initLife();
 
     document.querySelectorAll('[pellet]')
@@ -229,9 +246,9 @@ AFRAME.registerComponent('maze', {
     document.getElementById("ready").style.display = 'block';
 
     score = 0;
-    stageLevel = 1;
+    stageLevel = startLevel;
     ghostDefeatedCnt = 0;
-    nextLevelScore = levelScoreStep;
+    nextLevelScore = stageLevel * levelScoreStep;
     stageTransitioning = false;
     activePowerType = null;
     document.querySelector('#score').setAttribute('text', {
@@ -828,8 +845,7 @@ function getCellTypeAtIndex(stageMaze, cellIndex) {
 function getStageMaze(level) {
   if (level <= 1) return maze.slice();
 
-  // Stage 2+: procedurally generate pellet/floor layout while preserving
-  // wall/navmesh structure from the base maze.
+  // Stage 2+: procedurally generate layout while preserving key routes.
   const nextMaze = maze.slice();
   const seedBase = (level * 92821) % 2147483647;
   const seededNoise = (r, c) => {
@@ -846,6 +862,13 @@ function getStageMaze(level) {
         continue;
       }
 
+      // Keep critical gameplay routes stable (spawn + tunnel row).
+      const keepRoute = (r >= 12 && r <= 16 && c >= 8 && c <= 17) || (r === 13 && (c <= 2 || c >= 23));
+      if (keepRoute) {
+        nextMaze[idx] = 1;
+        continue;
+      }
+
       // Procedural floor/pellet pattern changes each level.
       const n = seededNoise(r, c);
       const denseBand = ((r + level) % 6 === 0) || ((c + level) % 7 === 0);
@@ -854,6 +877,9 @@ function getStageMaze(level) {
       } else {
         nextMaze[idx] = n > 0.38 ? 1 : 0;
       }
+
+      // Add procedural walls on some traversable cells.
+      if (n > 0.92) nextMaze[idx] = -1;
     }
   }
 
@@ -897,6 +923,7 @@ function applyStageTheme(level) {
   const sky = document.querySelector('a-sky');
   const floor = document.querySelector('a-plane');
   const minimap = document.querySelector('#minimap');
+  const mazeEl = document.querySelector('[maze]');
   if (!sky || !floor) return;
 
   const themes = [
@@ -909,6 +936,32 @@ function applyStageTheme(level) {
   sky.setAttribute('color', theme.sky);
   floor.setAttribute('color', theme.floor);
   if (minimap) minimap.style.borderColor = theme.border;
+  tintMazeWalls(mazeEl, getStageWallColor(level));
+  dynamicWallEls.forEach(w => w.setAttribute('color', getStageWallColor(level)));
+}
+
+function tintMazeWalls(mazeEntity, hexColor) {
+  if (!mazeEntity) return;
+  const mesh = mazeEntity.getObject3D('mesh');
+  if (!mesh) return;
+  mesh.traverse(node => {
+    if (!node.isMesh || !node.material || !node.material.color) return;
+    node.material.color.set(hexColor);
+    node.material.needsUpdate = true;
+  });
+}
+
+function getStageWallColor(level) {
+  const colors = ['#2121DE', '#5D2EFF', '#1FA36D', '#C76A10', '#B03060'];
+  return colors[(level - 1) % colors.length];
+}
+
+function getSelectedStartLevel() {
+  const selectEl = document.getElementById('level-select');
+  if (!selectEl) return 1;
+  const parsed = parseInt(selectEl.value, 10);
+  if (Number.isNaN(parsed) || parsed < 1) return 1;
+  return parsed;
 }
 
 function getPowerPillColor(powerType) {
