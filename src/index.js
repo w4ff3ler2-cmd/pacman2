@@ -46,6 +46,8 @@ const ghostScore = 200;
 let path = [];
 let pCnt = 0;
 let totalP = 0;
+let currentMaze = maze.slice();
+let currentIntersections = intersections.slice();
 let targetPos;
 let dead = true;
 let lifeCnt = 3;
@@ -132,8 +134,6 @@ AFRAME.registerComponent('maze', {
     setOpacity(this.el, 0.75);
 
     let sceneEl = this.el.sceneEl;
-    let cnt = 0;
-    let line = [];
     
     sceneEl.addEventListener('enter-vr', () => {
       document.getElementById('sound').style.display = 'none';
@@ -149,36 +149,52 @@ AFRAME.registerComponent('maze', {
       document.getElementById('github').style.display = 'block';
     });
 
-    // Create pellets and power pills
-    for (let i = 0; i < maze.length; i++) {
-      let x = startX + i %  col * step; 
-      let z = startZ + Math.floor(i / col) * step;
-      const cellType = maze[i] >= P.POWERPILL ? getPowerPillType(i) : maze[i];
-      if (maze[i] >= P.PELLET) {
-        pCnt++;
+    this.setStageLayout(1);
+    this.buildStageBoard();
+    stageTargetScore = getHalfPelletScoreTarget();
+    initMinimap();
+  },
+  setStageLayout: function (level) {
+    currentMaze = getStageMaze(level);
+    currentIntersections = getIntersectionsForMaze(currentMaze);
+  },
+  buildStageBoard: function () {
+    const sceneEl = this.el.sceneEl;
+    path = [];
+    pCnt = 0;
 
+    document.querySelectorAll('[pellet]').forEach(p => p.parentNode.removeChild(p));
+
+    let cnt = 0;
+    let line = [];
+    for (let i = 0; i < currentMaze.length; i++) {
+      let x = startX + i % col * step;
+      let z = startZ + Math.floor(i / col) * step;
+      const cellType = getCellTypeAtIndex(currentMaze, i);
+
+      if (currentMaze[i] >= P.PELLET) {
+        pCnt++;
         let sphere = document.createElement('a-sphere');
         sphere.setAttribute('color', cellType >= P.POWERPILL ? getPowerPillColor(cellType) : pColor);
         sphere.setAttribute('radius', cellType >= P.POWERPILL ? radius * 2 : radius);
         sphere.setAttribute('position', `${x} ${y} ${z}`);
         sphere.setAttribute('id', `p${i}`);
         sphere.setAttribute('pellet', '');
-        
+
         if (cellType >= P.POWERPILL) {
           let animation = document.createElement('a-animation');
           animation.setAttribute("attribute", "material.color");
           animation.setAttribute("from", getPowerPillColor(cellType));
           animation.setAttribute("to", "white");
-          animation.setAttribute("dur","500");
-          animation.setAttribute("repeat","indefinite");
+          animation.setAttribute("dur", "500");
+          animation.setAttribute("repeat", "indefinite");
           sphere.appendChild(animation);
         }
         sceneEl.appendChild(sphere);
       }
-      
-      // Store positions in path
-      line.push(maze[i] >= 0 ? [x, y, z, cellType > 0 ? i : P.WALL, cellType] : []); 
-      cnt++;    
+
+      line.push(currentMaze[i] >= 0 ? [x, y, z, cellType > 0 ? i : P.WALL, cellType] : []);
+      cnt++;
       if (cnt > (col - 1)) {
         path.push(line);
         line = [];
@@ -186,8 +202,11 @@ AFRAME.registerComponent('maze', {
       }
     }
     totalP = pCnt;
+  },
+  rebuildStageLayout: function (level) {
+    this.setStageLayout(level);
+    this.buildStageBoard();
     stageTargetScore = getHalfPelletScoreTarget();
-    initMinimap();
   },
   initStartButton: function () {
     let button = document.getElementById("start");
@@ -198,6 +217,7 @@ AFRAME.registerComponent('maze', {
     }
   },
   start: function () {
+    this.rebuildStageLayout(1);
     this.initLife();
 
     document.querySelectorAll('[pellet]')
@@ -330,11 +350,19 @@ AFRAME.registerComponent('player', {
     const i = clamped.i;
     const j = clamped.j;
 
-    if (i === 13 && j === 0) // Tunnel
-      this.moveTarget = new THREE.Vector3(path[13][24][0], y, path[13][24][2]);
-    else if (i === 13 && j === 25)
-      this.moveTarget = new THREE.Vector3(path[13][1][0], y, path[13][1][2]);
-    else {
+    if (i === 13 && j === 0) { // Tunnel
+      const tx = path[13][24][0];
+      const tz = path[13][24][2];
+      this.player.object3D.position.set(tx, y, tz);
+      this.moveTarget = new THREE.Vector3(tx, y, tz);
+      return;
+    } else if (i === 13 && j === 25) {
+      const tx = path[13][1][0];
+      const tz = path[13][1][2];
+      this.player.object3D.position.set(tx, y, tz);
+      this.moveTarget = new THREE.Vector3(tx, y, tz);
+      return;
+    } else {
       let newPos = path[i][j];
       if (newPos && newPos.length > 0)
         this.moveTarget = new THREE.Vector3(newPos[0], y, newPos[2]);
@@ -415,8 +443,9 @@ AFRAME.registerComponent('player', {
     stageScoreStart = score;
 
     this.stop();
+    const mazeComp = document.querySelector('[maze]').components.maze;
+    mazeComp.rebuildStageLayout(stageLevel);
     pCnt = totalP;
-    document.querySelectorAll('[pellet]').forEach(p => p.setAttribute('visible', true));
     updateGhostDefeatedHud();
 
     document.getElementById("gameover").style.display = 'none';
@@ -652,9 +681,9 @@ AFRAME.registerComponent('ghost', {
       return;
     }
 
-    let p = Math.floor(Math.random() * intersections.length);
-    let x = startX + intersections[p][0] * step; 
-    let z = startZ + intersections[p][1] * step; 
+    let p = Math.floor(Math.random() * currentIntersections.length);
+    let x = startX + currentIntersections[p][0] * step; 
+    let z = startZ + currentIntersections[p][1] * step; 
     updateAgentDest(el, targetPos ? targetPos : new THREE.Vector3(x, 0, z));
   }
 }); 
@@ -747,24 +776,24 @@ function renderMinimap(playerPos, ghosts) {
   ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
   ctx.fillRect(0, 0, w, h);
 
-  for (let i = 0; i < maze.length; i++) {
+  for (let i = 0; i < currentMaze.length; i++) {
     const tx = i % col;
     const tz = Math.floor(i / col);
     const px = tx * tileW;
     const pz = tz * tileH;
 
-    if (maze[i] < 0) {
+    if (currentMaze[i] < 0) {
       ctx.fillStyle = '#142A66';
       ctx.fillRect(px, pz, tileW, tileH);
       continue;
     }
 
-    if (maze[i] >= P.PELLET) {
+    if (currentMaze[i] >= P.PELLET) {
       const pellet = document.querySelector(`#p${i}`);
       if (pellet && pellet.getAttribute('visible')) {
-        const pelletType = getPowerPillType(i);
-        ctx.fillStyle = maze[i] >= P.POWERPILL ? getPowerPillColor(pelletType) : pColor;
-        const r = maze[i] >= P.POWERPILL ? Math.max(2, tileW * 0.28) : Math.max(1, tileW * 0.16);
+        const pelletType = getCellTypeAtIndex(currentMaze, i);
+        ctx.fillStyle = currentMaze[i] >= P.POWERPILL ? getPowerPillColor(pelletType) : pColor;
+        const r = currentMaze[i] >= P.POWERPILL ? Math.max(2, tileW * 0.28) : Math.max(1, tileW * 0.16);
         ctx.beginPath();
         ctx.arc(px + tileW / 2, pz + tileH / 2, r, 0, Math.PI * 2);
         ctx.fill();
@@ -792,6 +821,56 @@ function getPowerPillType(cellIndex) {
   return types[cellIndex % types.length];
 }
 
+function getCellTypeAtIndex(stageMaze, cellIndex) {
+  const cell = stageMaze[cellIndex];
+  if (cell === P.POWERPILL) return getPowerPillType(cellIndex);
+  return cell;
+}
+
+function getStageMaze(level) {
+  if (level <= 1) return maze.slice();
+
+  // Stage 2+: mirrored maze with remapped pellets for a distinct layout.
+  const nextMaze = [];
+  for (let r = 0; r < row; r++) {
+    const rowStart = r * col;
+    const original = maze.slice(rowStart, rowStart + col);
+    const mirrored = original.slice().reverse();
+    for (let c = 0; c < col; c++) {
+      const v = mirrored[c];
+      if (v >= P.POWERPILL) {
+        // Rotate power pill type by stage for visible variation.
+        const stageShift = (level - 1) % 3;
+        const variants = [P.POWER_KILL, P.POWER_SPEED, P.POWER_FREEZE];
+        nextMaze.push(variants[(c + r + stageShift) % variants.length]);
+      } else {
+        nextMaze.push(v);
+      }
+    }
+  }
+  return nextMaze;
+}
+
+function getIntersectionsForMaze(stageMaze) {
+  const pts = [];
+  for (let r = 0; r < row; r++) {
+    for (let c = 0; c < col; c++) {
+      const idx = r * col + c;
+      if (stageMaze[idx] < 0) continue;
+
+      let open = 0;
+      if (r > 0 && stageMaze[(r - 1) * col + c] >= 0) open++;
+      if (r < row - 1 && stageMaze[(r + 1) * col + c] >= 0) open++;
+      if (c > 0 && stageMaze[r * col + (c - 1)] >= 0) open++;
+      if (c < col - 1 && stageMaze[r * col + (c + 1)] >= 0) open++;
+      if (open >= 3) pts.push([c, r]);
+    }
+  }
+
+  // Fallback to known-good intersections if computed set is too sparse.
+  return pts.length > 10 ? pts : intersections.slice();
+}
+
 function getPowerPillColor(powerType) {
   if (!powerType) return '#FFFFFF';
   if (powerType === P.POWER_SPEED) return '#FFD54A';
@@ -807,9 +886,9 @@ function getPowerPillDuration(powerType) {
 
 function getHalfPelletScoreTarget() {
   let totalScore = 0;
-  for (let i = 0; i < maze.length; i++) {
-    if (maze[i] < P.PELLET) continue;
-    totalScore += maze[i] >= P.POWERPILL ? pillScore : pelletScore;
+  for (let i = 0; i < currentMaze.length; i++) {
+    if (currentMaze[i] < P.PELLET) continue;
+    totalScore += currentMaze[i] >= P.POWERPILL ? pillScore : pelletScore;
   }
   return Math.floor(totalScore / 2);
 }
