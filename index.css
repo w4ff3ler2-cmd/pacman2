@@ -46,10 +46,10 @@ body {
 
 #logo {
   position: fixed;
-  width: 80%;
+  width: 78%;
   min-width: 400px;
-  max-width: 600px;
-  top: calc(50% - 60px);
+  max-width: 620px;
+  top: calc(50% - 72px);
   left: 50%;
   transform: translate(-50%, -50%);
 }
@@ -58,7 +58,7 @@ body {
   position: fixed;
   width: 145px;
   height: 45px;
-  top: calc(50% + 60px);
+  top: calc(50% + 82px);
   left: 50%;
   transform: translate(-50%, -50%);
   border-radius: 5px;
@@ -73,7 +73,7 @@ body {
 
 #level-select-wrap {
   position: fixed;
-  top: calc(50% + 10px);
+  top: calc(50% + 36px);
   left: 50%;
   transform: translate(-50%, -50%);
   color: white;
