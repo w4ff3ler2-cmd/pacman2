@@ -215,9 +215,8 @@ AFRAME.registerComponent('player', {
     this.ghosts = document.querySelectorAll('[ghost]');
     this.player = document.querySelector('[player]');
     this.camera = document.querySelector('a-camera');
-    this.normalMoveInterval = 380;
-    this.fastMoveInterval = 190;
-    this.lastMoveAt = 0;
+    this.baseMoveSpeed = 1.35;
+    this.moveTarget = null;
     // Keep player orientation independent from pathfinding turning.
     this.player.setAttribute('nav-agent', { active: false });
     this.lastNearestGhostDist = null;
@@ -225,19 +224,17 @@ AFRAME.registerComponent('player', {
     this.currentBg = siren;
     this.nextBg = siren;
   },
-  tick: function (time) {
+  tick: function (time, timeDelta) {
     if (dead || path.length < row) return;
-    const moveInterval = activePowerType === P.POWER_SPEED ? this.fastMoveInterval : this.normalMoveInterval;
-    if (time - this.lastMoveAt < moveInterval) return;
-    this.lastMoveAt = time;
 
     this.nextBg = siren;
-    const position = this.el.getAttribute('position');
+    const currentPos = this.player.object3D.position;
+    const position = {x: currentPos.x, y: currentPos.y, z: currentPos.z};
     const x = position.x;
     const yPos = position.y;
     const z = position.z;
 
-    this.updatePlayerDest(x, yPos, z);
+    this.updatePlayerMovement(x, yPos, z, timeDelta);
     this.updateCloseProximity(x, z);
     this.onCollideWithPellets(x, z);
     this.updateGhosts(x, z);
@@ -252,6 +249,35 @@ AFRAME.registerComponent('player', {
       this.nextBg.play();
       this.currentBg = this.nextBg;
     }
+  },
+  updatePlayerMovement: function (x, y, z, timeDelta) {
+    if (!this.moveTarget) {
+      this.moveTarget = new THREE.Vector3(x, y, z);
+    }
+
+    const currentPos = this.player.object3D.position;
+    const dx = this.moveTarget.x - currentPos.x;
+    const dz = this.moveTarget.z - currentPos.z;
+    const distToTarget = Math.sqrt(dx * dx + dz * dz);
+
+    if (distToTarget < 0.04) {
+      this.updatePlayerDest(currentPos.x, currentPos.y, currentPos.z);
+    }
+
+    const speedMul = activePowerType === P.POWER_SPEED ? 2 : 1;
+    const moveStep = this.baseMoveSpeed * speedMul * (timeDelta / 1000);
+    const ndx = this.moveTarget.x - currentPos.x;
+    const ndz = this.moveTarget.z - currentPos.z;
+    const remaining = Math.sqrt(ndx * ndx + ndz * ndz);
+    if (remaining < 0.0001) return;
+
+    if (moveStep >= remaining) {
+      currentPos.set(this.moveTarget.x, currentPos.y, this.moveTarget.z);
+      return;
+    }
+
+    currentPos.x += (ndx / remaining) * moveStep;
+    currentPos.z += (ndz / remaining) * moveStep;
   },
   getForwardStep: function () {
     const forward = new THREE.Vector3();
@@ -285,13 +311,13 @@ AFRAME.registerComponent('player', {
     const j = clamped.j;
 
     if (i === 13 && j === 0) // Tunnel
-      this.el.object3D.position.set(path[13][24][0], y, path[13][24][2]);
+      this.moveTarget = new THREE.Vector3(path[13][24][0], y, path[13][24][2]);
     else if (i === 13 && j === 25)
-      this.el.object3D.position.set(path[13][1][0], y, path[13][1][2]);
+      this.moveTarget = new THREE.Vector3(path[13][1][0], y, path[13][1][2]);
     else {
       let newPos = path[i][j];
       if (newPos && newPos.length > 0)
-        this.player.object3D.position.set(newPos[0], y, newPos[2]);
+        this.moveTarget = new THREE.Vector3(newPos[0], y, newPos[2]);
     }
   },
   updateCloseProximity: function (x, z) {
@@ -525,6 +551,7 @@ AFRAME.registerComponent('player', {
     dead = true;
     pillCnt = 0;
     this.waveCnt = 0;
+    this.moveTarget = null;
     this.clearPowerEffect();
 
     // Update score
