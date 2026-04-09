@@ -42,6 +42,7 @@ const closeProximityDist = 1.2;
 const pelletScore = 10;
 const pillScore = 50;
 const ghostScore = 200;
+const levelScoreStep = 1500;
 
 let path = [];
 let pCnt = 0;
@@ -58,8 +59,7 @@ let activePowerType = null;
 let soundCtrl = true;
 let stageLevel = 1;
 let ghostDefeatedCnt = 0;
-let stageScoreStart = 0;
-let stageTargetScore = 0;
+let nextLevelScore = levelScoreStep;
 let stageTransitioning = false;
 let minimapCanvas;
 let minimapCtx;
@@ -151,7 +151,6 @@ AFRAME.registerComponent('maze', {
 
     this.setStageLayout(1);
     this.buildStageBoard();
-    stageTargetScore = getHalfPelletScoreTarget();
     initMinimap();
   },
   setStageLayout: function (level) {
@@ -206,7 +205,6 @@ AFRAME.registerComponent('maze', {
   rebuildStageLayout: function (level) {
     this.setStageLayout(level);
     this.buildStageBoard();
-    stageTargetScore = getHalfPelletScoreTarget();
     applyStageTheme(level);
   },
   initStartButton: function () {
@@ -233,7 +231,7 @@ AFRAME.registerComponent('maze', {
     score = 0;
     stageLevel = 1;
     ghostDefeatedCnt = 0;
-    stageScoreStart = 0;
+    nextLevelScore = levelScoreStep;
     stageTransitioning = false;
     activePowerType = null;
     document.querySelector('#score').setAttribute('text', {
@@ -432,8 +430,7 @@ AFRAME.registerComponent('player', {
   },
   checkStageAdvance: function () {
     if (stageTransitioning || dead) return;
-    const stageScoreDelta = score - stageScoreStart;
-    if (ghostDefeatedCnt >= 4 || stageScoreDelta >= stageTargetScore) {
+    if (score >= nextLevelScore) {
       this.advanceStage();
     }
   },
@@ -441,7 +438,7 @@ AFRAME.registerComponent('player', {
     stageTransitioning = true;
     stageLevel++;
     ghostDefeatedCnt = 0;
-    stageScoreStart = score;
+    nextLevelScore += levelScoreStep;
 
     this.stop();
     const mazeComp = document.querySelector('[maze]').components.maze;
@@ -831,9 +828,15 @@ function getCellTypeAtIndex(stageMaze, cellIndex) {
 function getStageMaze(level) {
   if (level <= 1) return maze.slice();
 
-  // Stage 2+: keep walls/navmesh compatibility, but use a different
-  // pellet-road layout pattern and power pill placement.
+  // Stage 2+: procedurally generate pellet/floor layout while preserving
+  // wall/navmesh structure from the base maze.
   const nextMaze = maze.slice();
+  const seedBase = (level * 92821) % 2147483647;
+  const seededNoise = (r, c) => {
+    const n = Math.sin((r + 1) * 12.9898 + (c + 1) * 78.233 + seedBase) * 43758.5453;
+    return n - Math.floor(n);
+  };
+
   for (let r = 0; r < row; r++) {
     for (let c = 0; c < col; c++) {
       const idx = r * col + c;
@@ -843,20 +846,29 @@ function getStageMaze(level) {
         continue;
       }
 
-      // New stage pattern: diagonal lanes and pockets.
-      nextMaze[idx] = ((r + c) % 4 === 0 || (r % 5 === 0 && c % 2 === 0)) ? 0 : 1;
+      // Procedural floor/pellet pattern changes each level.
+      const n = seededNoise(r, c);
+      const denseBand = ((r + level) % 6 === 0) || ((c + level) % 7 === 0);
+      if (denseBand) {
+        nextMaze[idx] = n > 0.18 ? 1 : 0;
+      } else {
+        nextMaze[idx] = n > 0.38 ? 1 : 0;
+      }
     }
   }
 
-  // Stage-specific power pellets in fixed, visible positions.
-  const powerCoords = [
-    [1, 3], [24, 3], [3, 8], [22, 8],
-    [3, 20], [22, 20], [1, 26], [24, 26]
-  ];
-  powerCoords.forEach(([x, z]) => {
-    const idx = z * col + x;
-    if (idx >= 0 && idx < nextMaze.length && nextMaze[idx] >= 0) nextMaze[idx] = 2;
-  });
+  // Procedural power pellet anchors per level.
+  let placed = 0;
+  for (let i = 0; i < nextMaze.length && placed < 8; i++) {
+    if (nextMaze[i] <= 0) continue;
+    const r = Math.floor(i / col);
+    const c = i % col;
+    const n = seededNoise(r + level, c + level);
+    if (n > 0.86) {
+      nextMaze[i] = 2;
+      placed++;
+    }
+  }
 
   return nextMaze;
 }
@@ -884,17 +896,19 @@ function getIntersectionsForMaze(stageMaze) {
 function applyStageTheme(level) {
   const sky = document.querySelector('a-sky');
   const floor = document.querySelector('a-plane');
+  const minimap = document.querySelector('#minimap');
   if (!sky || !floor) return;
 
-  if (level <= 1) {
-    sky.setAttribute('color', 'blue');
-    floor.setAttribute('color', 'black');
-    return;
-  }
-
-  // Distinct Stage 2+ palette.
-  sky.setAttribute('color', '#1E0B3B');
-  floor.setAttribute('color', '#0F1C2E');
+  const themes = [
+    {sky: '#1E0B3B', floor: '#0F1C2E', border: '#7D63FF'},
+    {sky: '#123B2B', floor: '#0A1E18', border: '#2ED890'},
+    {sky: '#3B1B12', floor: '#23150A', border: '#FF9A3D'},
+    {sky: '#102A4A', floor: '#091427', border: '#56B7FF'}
+  ];
+  const theme = themes[(level - 1) % themes.length];
+  sky.setAttribute('color', theme.sky);
+  floor.setAttribute('color', theme.floor);
+  if (minimap) minimap.style.borderColor = theme.border;
 }
 
 function getPowerPillColor(powerType) {
