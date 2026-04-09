@@ -194,6 +194,7 @@ AFRAME.registerComponent('maze', {
     obstacleIndices.forEach(idx => {
       currentMaze[idx] = P.WALL;
     });
+    currentIntersections = getIntersectionsForMaze(currentMaze);
 
     let cnt = 0;
     let line = [];
@@ -785,6 +786,10 @@ AFRAME.registerComponent('ghost', {
     el.addEventListener('model-loaded', () => updateGhostColor(el.object3D, el.defaultColor));
     el.addEventListener('navigation-end', this.onNavEnd.bind(this));
   },
+  tick: function () {
+    if (dead || this.el.dead) return;
+    pushGhostOutOfDynamicObstacles(this.el);
+  },
   onNavEnd: function () {
     let el = this.el;
     if (el.dead) {
@@ -807,9 +812,12 @@ AFRAME.registerComponent('ghost', {
       return;
     }
 
-    let p = Math.floor(Math.random() * currentIntersections.length);
-    let x = startX + currentIntersections[p][0] * step; 
-    let z = startZ + currentIntersections[p][1] * step; 
+    const safePts = getWalkableIntersections();
+    const pts = safePts.length ? safePts : currentIntersections;
+    if (!pts.length) return;
+    let p = Math.floor(Math.random() * pts.length);
+    let x = startX + pts[p][0] * step;
+    let z = startZ + pts[p][1] * step;
     updateAgentDest(el, targetPos ? targetPos : new THREE.Vector3(x, 0, z));
   }
 }); 
@@ -910,6 +918,47 @@ function worldToTile(x, z) {
   };
 }
 
+function getWalkableIntersections() {
+  if (!currentIntersections || !currentIntersections.length) return [];
+  return currentIntersections.filter(([cx, cr]) => {
+    const idx = cr * col + cx;
+    return idx >= 0 && idx < currentMaze.length && currentMaze[idx] >= 0;
+  });
+}
+
+function pushGhostOutOfDynamicObstacles(ghost) {
+  if (!ghost || ghost.dead || dynamicWallEls.length === 0) return;
+  const o3d = ghost.object3D;
+  let gx = o3d.position.x;
+  let gz = o3d.position.z;
+  const gy = o3d.position.y;
+  let changed = false;
+  for (let wi = 0; wi < dynamicWallEls.length; wi++) {
+    const wall = dynamicWallEls[wi];
+    const wp = wall.object3D.position;
+    const halfW = parseFloat(wall.getAttribute('width')) / 2;
+    const halfD = parseFloat(wall.getAttribute('depth')) / 2;
+    const dx = gx - wp.x;
+    const dz = gz - wp.z;
+    if (Math.abs(dx) >= halfW || Math.abs(dz) >= halfD) continue;
+    const penX = halfW - Math.abs(dx);
+    const penZ = halfD - Math.abs(dz);
+    const signX = dx === 0 ? 1 : Math.sign(dx);
+    const signZ = dz === 0 ? 1 : Math.sign(dz);
+    if (penX < penZ) {
+      gx = wp.x + signX * (halfW + 0.04);
+    } else {
+      gz = wp.z + signZ * (halfD + 0.04);
+    }
+    changed = true;
+  }
+  if (changed) {
+    o3d.position.x = gx;
+    o3d.position.z = gz;
+    ghost.setAttribute('position', {x: gx, y: gy, z: gz});
+  }
+}
+
 function initMinimap() {
   minimapCanvas = document.getElementById('minimap');
   if (!minimapCanvas) return;
@@ -969,6 +1018,7 @@ function renderMinimap(playerPos, ghosts) {
 }
 
 function getPowerPillType(cellIndex) {
+  if (stageLevel <= 1) return P.POWER_KILL;
   const types = [P.POWER_SPEED, P.POWER_KILL, P.POWER_FREEZE, P.POWER_EARTH, P.POWER_FIRE];
   return types[cellIndex % types.length];
 }
