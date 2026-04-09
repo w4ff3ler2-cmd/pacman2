@@ -492,7 +492,7 @@ AFRAME.registerComponent('player', {
 
     for (var i = 0; i < ghosts.length; i++) {
       if (ghosts[i].dead) this.nextBg = ghostEaten;
-      pushGhostOutOfDynamicObstacles(ghosts[i]);
+      resolveGhostAgainstObstacles(ghosts[i]);
       const ghostPos = ghosts[i].getAttribute('position');
       const dx = x - ghostPos.x;
       const dz = z - ghostPos.z;
@@ -796,7 +796,7 @@ AFRAME.registerComponent('ghost', {
   tick: function () {
     if (dead || this.el.dead) return;
     if (dynamicWallEls.length === 0) return;
-    pushGhostOutOfDynamicObstacles(this.el);
+    resolveGhostAgainstObstacles(this.el);
   },
   onNavEnd: function () {
     let el = this.el;
@@ -968,41 +968,101 @@ function getTilesReachableFromPlayer(tx, tz) {
   return set;
 }
 
-function pushGhostOutOfDynamicObstacles(ghost) {
-  if (!ghost || ghost.dead || dynamicWallEls.length === 0) return;
+function isGridWalkable(tx, tz) {
+  if (tx < 0 || tx >= col || tz < 0 || tz >= row) return false;
+  return currentMaze[tz * col + tx] >= 0;
+}
+
+function pointInsideAnyDynamicObstacle(x, z) {
+  for (let wi = 0; wi < dynamicWallEls.length; wi++) {
+    const wall = dynamicWallEls[wi];
+    const wp = wall.object3D.position;
+    const halfW = parseFloat(wall.getAttribute('width')) / 2;
+    const halfD = parseFloat(wall.getAttribute('depth')) / 2;
+    if (Math.abs(x - wp.x) < halfW && Math.abs(z - wp.z) < halfD) return true;
+  }
+  return false;
+}
+
+function snapGhostToNearestFreeTile(ghost, gx, gz, gy) {
   const o3d = ghost.object3D;
-  let gx = o3d.position.x;
-  let gz = o3d.position.z;
-  const gy = o3d.position.y;
-  let anyMoved = false;
-  for (let iter = 0; iter < 14; iter++) {
-    let changed = false;
+  const t = worldToTile(gx, gz);
+  for (let r = 0; r < 24; r++) {
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (r > 0 && Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const tx = t.x + dx;
+        const tz = t.z + dz;
+        if (!isGridWalkable(tx, tz)) continue;
+        const wx = startX + tx * step;
+        const wz = startZ + tz * step;
+        if (pointInsideAnyDynamicObstacle(wx, wz)) continue;
+        o3d.position.set(wx, gy, wz);
+        ghost.setAttribute('position', {x: wx, y: gy, z: wz});
+        return {x: wx, z: wz};
+      }
+    }
+  }
+  return null;
+}
+
+function nudgeGhostOutOfObstacleBoxes(ghost, gx, gz, gy) {
+  const o3d = ghost.object3D;
+  let x = gx;
+  let z = gz;
+  for (let iter = 0; iter < 16; iter++) {
+    let moved = false;
     for (let wi = 0; wi < dynamicWallEls.length; wi++) {
       const wall = dynamicWallEls[wi];
       const wp = wall.object3D.position;
       const halfW = parseFloat(wall.getAttribute('width')) / 2;
       const halfD = parseFloat(wall.getAttribute('depth')) / 2;
-      const dx = gx - wp.x;
-      const dz = gz - wp.z;
+      const dx = x - wp.x;
+      const dz = z - wp.z;
       if (Math.abs(dx) >= halfW || Math.abs(dz) >= halfD) continue;
       const penX = halfW - Math.abs(dx);
       const penZ = halfD - Math.abs(dz);
       const signX = dx === 0 ? 1 : Math.sign(dx);
       const signZ = dz === 0 ? 1 : Math.sign(dz);
       if (penX < penZ) {
-        gx = wp.x + signX * (halfW + 0.08);
+        x = wp.x + signX * (halfW + 0.1);
       } else {
-        gz = wp.z + signZ * (halfD + 0.08);
+        z = wp.z + signZ * (halfD + 0.1);
       }
-      changed = true;
+      moved = true;
     }
-    if (!changed) break;
-    anyMoved = true;
+    if (!moved) break;
   }
-  if (anyMoved) {
-    o3d.position.x = gx;
-    o3d.position.z = gz;
-    ghost.setAttribute('position', {x: gx, y: gy, z: gz});
+  o3d.position.set(x, gy, z);
+  ghost.setAttribute('position', {x: x, y: gy, z: z});
+  return {x: x, z: z};
+}
+
+function resolveGhostAgainstObstacles(ghost) {
+  if (!ghost || ghost.dead || dynamicWallEls.length === 0) return;
+
+  const o3d = ghost.object3D;
+  const gx = o3d.position.x;
+  const gz = o3d.position.z;
+  const gy = o3d.position.y;
+  const tile = worldToTile(gx, gz);
+  const onWallTile = !isGridWalkable(tile.x, tile.z);
+  const insideBox = pointInsideAnyDynamicObstacle(gx, gz);
+
+  if (!onWallTile && !insideBox) return;
+
+  let dest = snapGhostToNearestFreeTile(ghost, gx, gz, gy);
+  if (!dest && insideBox) {
+    dest = nudgeGhostOutOfObstacleBoxes(ghost, gx, gz, gy);
+    if (pointInsideAnyDynamicObstacle(dest.x, dest.z)) {
+      dest = snapGhostToNearestFreeTile(ghost, dest.x, dest.z, gy);
+    }
+  }
+  if (dest) {
+    const wt = worldToTile(dest.x, dest.z);
+    if (isGridWalkable(wt.x, wt.z) && !pointInsideAnyDynamicObstacle(dest.x, dest.z)) {
+      updateAgentDest(ghost, new THREE.Vector3(dest.x, 0, dest.z));
+    }
   }
 }
 
